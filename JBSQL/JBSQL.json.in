@@ -1,0 +1,11 @@
+{
+    \"Name\" : \"JBSQL\",
+    \"Version\" : \"0.0.1\",
+    \"CompatVersion\" : \"0.0.1\",
+    \"Vendor\" : \"JB\",
+    \"Copyright\" : \"None\",
+    \"License\" : \"Public\",
+    \"Description\" : \"Custom Qt plugin to utilize existing low-level SQLite3 code\",
+    \"Url\" : \"https://github.com/JBs197/Database\",
+    $$dependencyList
+}
