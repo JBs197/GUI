@@ -553,7 +553,7 @@ void CATA_DB::populate_table(QSqlDatabase& db)
     log8(cata_number + " table populated.\r\n");
 }
 
-// This object represents the organizational union of all catalogues in the database.
+// This object represents the organizational union of all catalogues chosen to be loaded.
 class TREE_DB {
     QSqlDatabase& db;
     wstring root_folder;

@@ -139,12 +139,6 @@
      <height>21</height>
     </rect>
    </property>
-   <widget class="QMenu" name="menuSCDA_Database_Selector">
-    <property name="title">
-     <string>SCDA Database Selector</string>
-    </property>
-   </widget>
-   <addaction name="menuSCDA_Database_Selector"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
