@@ -555,15 +555,14 @@ void CATA_DB::populate_table(QSqlDatabase& db)
 
 // This object represents the organizational union of all catalogues chosen to be loaded.
 class TREE_DB {
-    QSqlDatabase& db;
     wstring root_folder;
-    vector<wstring> years; // Indices match the first dimension of the 'catalogue_paths' matrix.
-    vector<vector<wstring>> catalogue_paths;
+    vector<wstring> year_folders; // Indices match the first dimension of the 'catalogue_paths' matrix.
+    vector<vector<wstring>> cata_folders;
     vector<vector<CATA_DB>> trunk; // Form [Year][Catalogue]
 public:
-    TREE_DB(QSqlDatabase& db) : db(db) {}
+    TREE_DB() {}
     ~TREE_DB() {}
-    void tree_initialize(wstring); // Given a root folder, build the database using all CSVs in all subfolders within.
+    void tree_assembly(QSqlDatabase&, vector<wstring>&); // Given a root folder, build the database using all CSVs in all subfolders within.
     CATA_DB tablemaker(QSqlDatabase&, wstring); // Given a database and a folder containing CSV files, make a table for that catalogue.
 };
 CATA_DB TREE_DB::tablemaker(QSqlDatabase& db, wstring cata_folder)
@@ -573,16 +572,17 @@ CATA_DB TREE_DB::tablemaker(QSqlDatabase& db, wstring cata_folder)
     cata.populate_table(db);
     return cata;
 }
-void TREE_DB::tree_initialize(wstring rf)
+void TREE_DB::tree_assembly(QSqlDatabase& db, vector<wstring>& yf)
 {
-    root_folder = rf;
-    catalogue_paths = get_subfolders2(root_folder);
-    for (size_t ii = 0; ii < catalogue_paths.size(); ii++)
+    root_folder = yf[0].substr(0, 2);
+    year_folders = yf;
+    for (size_t ii = 0; ii < year_folders.size(); ii++)
     {
+        cata_folders.push_back(get_subfolders(year_folders[ii]));
         trunk.push_back(vector<CATA_DB>());
-        for (size_t jj = 0; jj < catalogue_paths[ii].size(); jj++)
+        for (size_t jj = 0; jj < cata_folders[ii].size(); jj++)
         {
-            trunk[ii].push_back(tablemaker(db, catalogue_paths[ii][jj]));
+            trunk[ii].push_back(tablemaker(db, cata_folders[ii][jj]));
         }
     }
 }
