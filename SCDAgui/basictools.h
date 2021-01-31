@@ -1,8 +1,6 @@
 #ifndef BASICTOOLS_H
 #define BASICTOOLS_H
 
-#endif // BASICTOOLS_H
-
 #include <string>
 #include <vector>
 #include <chrono>
@@ -72,12 +70,12 @@ string timestamperA()
 void err(wstring func)
 {
     string func8 = utf16to8(func);
-    string name = proj_root + "\\SCDA Error Log.txt";
+    string name = db_root8 + "\\SCDA Error Log.txt";
     string message = timestamperA() + " Generic error: " + func8 + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = func.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -87,12 +85,12 @@ void err(wstring func)
 }
 void err8(string func8)
 {
-    string name = proj_root + "\\SCDA Error Log.txt";
+    string name = db_root8 + "\\SCDA Error Log.txt";
     string message = timestamperA() + " Generic error: " + func8 + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = func8.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -100,17 +98,16 @@ void err8(string func8)
     }
     exit(EXIT_FAILURE);
 }
-void sqlerr(wstring func, QSqlQuery& stmt)
+void sqlerr(wstring func, QSqlError qerror)
 {
     string func8 = utf16to8(func);
-    string name = proj_root + "\\SCDA Error Log.txt";
-    QSqlError qerror = stmt.lastError();
+    string name = db_root8 + "\\SCDA Error Log.txt";
     QString qmessage = qerror.text();
     string message = timestamperA() + " SQL error inside " + func8 + "\r\n" + qmessage.toStdString() + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = func.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -128,12 +125,12 @@ void winerr(wstring func)
     string winmessage(buffer, 512);
     delete[] buffer;
     string func8 = utf16to8(func);
-    string name = proj_root + "\\SCDA Error Log.txt";
+    string name = db_root8 + "\\SCDA Error Log.txt";
     string message = timestamperA() + " Windows error #" + to_string(num) + " inside " + func8 + "\r\n" + winmessage + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = func.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -144,12 +141,12 @@ void winerr(wstring func)
 void warn(wstring func)
 {
     string func8 = utf16to8(func);
-    string name = proj_root + "\\SCDA Error Log.txt";
+    string name = db_root8 + "\\SCDA Error Log.txt";
     string message = timestamperA() + " Generic warning: " + func8 + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = func.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -158,29 +155,28 @@ void warn(wstring func)
 }
 void warn8(string func8)
 {
-    string name = proj_root + "\\SCDA Error Log.txt";
+    string name = db_root8 + "\\SCDA Error Log.txt";
     string message = timestamperA() + " Generic warning: " + func8 + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = func8.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
         CloseHandle(hprinter);
     }
 }
-void sqlwarn(wstring func, QSqlQuery& stmt)
+void sqlwarn(wstring func, QSqlError qerror)
 {
     string func8 = utf16to8(func);
-    string name = proj_root + "\\SCDA Error Log.txt";
-    QSqlError qerror = stmt.lastError();
+    string name = db_root8 + "\\SCDA Error Log.txt";
     QString qmessage = qerror.text();
-    string message = timestamperA() + " SQL error inside " + func8 + "\r\n" + qmessage.toStdString() + "\r\n";
+    string message = timestamperA() + " SQL warning inside " + func8 + "\r\n" + qmessage.toStdString() + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = func.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -197,12 +193,12 @@ void winwarn(wstring func)
     string winmessage(buffer, 512);
     delete[] buffer;
     string func8 = utf16to8(func);
-    string name = proj_root + "\\SCDA Error Log.txt";
+    string name = db_root8 + "\\SCDA Error Log.txt";
     string message = timestamperA() + " Windows warning #" + to_string(num) + " inside " + func8 + "\r\n" + winmessage + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = func.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -214,7 +210,7 @@ void winwarn(wstring func)
 void log(wstring note)
 {
     string note8 = utf16to8(note);
-    string name = proj_root + "\\SCDA Process Log.txt";
+    string name = db_root8 + "\\SCDA Process Log.txt";
     string message = timestamperA() + "  " + note8 + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log"); }
@@ -228,7 +224,7 @@ void log(wstring note)
     }
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = message.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -237,7 +233,7 @@ void log(wstring note)
 }
 void log8(string note8)
 {
-    string name = proj_root + "\\SCDA Process Log.txt";
+    string name = db_root8 + "\\SCDA Process Log.txt";
     string message = timestamperA() + "  " + note8 + "\r\n";
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log"); }
@@ -251,7 +247,7 @@ void log8(string note8)
     }
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
-    DWORD fsize = message.size();
+    DWORD fsize = (DWORD)message.size();
     WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
     if (hprinter)
     {
@@ -571,7 +567,7 @@ int download(wstring url, wstring folder, wstring filename)
     HANDLE hprinter = CreateFileW(filepath.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, CREATE_ALWAYS, 0, NULL);
     if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile"); return 6; }
     DWORD bytes_written;
-    DWORD file_size = fileW.size() * 2;
+    DWORD file_size = (DWORD)fileW.size() * 2;
     if (!WriteFile(hprinter, fileW.c_str(), file_size, &bytes_written, NULL)) { warn(L"WriteFile"); return 7; }
 
     if (hrequest) { InternetCloseHandle(hrequest); }
@@ -580,7 +576,32 @@ int download(wstring url, wstring folder, wstring filename)
     return 0;
 }
 
-// Given a root folder, return a vector containing the full paths of all subfolders within.
+// Given a folder path, return a vector containing the full paths of all files within. Does not list subfolders.
+vector<wstring> get_file_paths(wstring folder_path)
+{
+    vector<wstring> file_paths;
+    wstring folder_search = folder_path + L"\\*";
+    WIN32_FIND_DATAW info;
+    HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
+    if (hfile1 == INVALID_HANDLE_VALUE) { winerr(L"FindFirstFile-get_file_paths"); }
+    wstring file_path;
+    DWORD attributes;
+
+    do
+    {
+        attributes = info.dwFileAttributes;
+        if (attributes == FILE_ATTRIBUTE_NORMAL)
+        {
+            file_path = folder_path + L"\\" + info.cFileName;
+            file_paths.push_back(file_path);
+        }
+    } while (FindNextFileW(hfile1, &info));
+
+    if (!FindClose(hfile1)) { winwarn(L"FindClose-get_file_paths"); }
+    return file_paths;
+}
+
+// Given a root folder path, return a vector containing the full paths of all subfolders within.
 vector<wstring> get_subfolders(wstring root_folder)
 {
     vector<wstring> subfolders;
@@ -602,7 +623,7 @@ vector<wstring> get_subfolders(wstring root_folder)
     } while (FindNextFileW(hfile1, &info));
     if (!FindClose(hfile1)) { winwarn(L"FindClose-get_subfolders"); }
 
-    for (int ii = subfolders.size() - 1; ii >= 0; ii--)
+    for (int ii = (int)subfolders.size() - 1; ii >= 0; ii--)
     {
         pos1 = subfolders[ii].find(L"System Volume Information", 0);
         if (pos1 < subfolders[ii].size())
@@ -628,3 +649,4 @@ vector<vector<wstring>> get_subfolders2(wstring root_folder)
     return subfolders2;
 }
 
+#endif

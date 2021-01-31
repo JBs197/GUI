@@ -2,7 +2,7 @@
 #define MAINWINDOW_H
 #include <QMainWindow>
 #include <QListWidgetItem>
-#include "DBfunctions.h"
+#include "DBclasses.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -15,21 +15,24 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-
+    void set_wdrive(wstring wd) { wdrive = wd; }
     std::wstring get_wdrive() { return wdrive; }
+    void set_model_string_list() { mdl.setStringList(nex.get_table_list()); }
 private slots:
-    void on_pushButton_clicked();
+    void on_pushButton_Scan_clicked();
 
-    void on_comboBox_currentTextChanged(const QString &arg1);
+    void on_comboBox_drives_currentTextChanged(const QString &arg1);
 
-    void on_pushButton_2_clicked();
+    void on_pushButton_SelectAll_clicked();
 
-    void on_pushButton_3_clicked();
+    void on_pushButton_Commit_clicked();
+
+    void on_pushButton_ShowTables_clicked();
 
 private:
     Ui::MainWindow *ui;
     std::wstring wdrive;
-    QSqlDatabase db;
-    TREE_DB treebeard;
+    NEXUS_DB nex;
+    QStringListModel mdl;
 };
-#endif // MAINWINDOW_H
+#endif

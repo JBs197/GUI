@@ -14,7 +14,7 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QListView" name="listView">
+   <widget class="QListView" name="listView_columns">
     <property name="geometry">
      <rect>
       <x>170</x>
@@ -24,7 +24,7 @@
      </rect>
     </property>
    </widget>
-   <widget class="QComboBox" name="comboBox">
+   <widget class="QComboBox" name="comboBox_drives">
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -34,7 +34,7 @@
      </rect>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton">
+   <widget class="QPushButton" name="pushButton_Scan">
     <property name="geometry">
      <rect>
       <x>90</x>
@@ -47,7 +47,7 @@
      <string>Scan</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_2">
+   <widget class="QPushButton" name="pushButton_SelectAll">
     <property name="geometry">
      <rect>
       <x>170</x>
@@ -60,7 +60,7 @@
      <string>Select All</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_3">
+   <widget class="QPushButton" name="pushButton_Commit">
     <property name="geometry">
      <rect>
       <x>250</x>
@@ -73,7 +73,7 @@
      <string>Commit</string>
     </property>
    </widget>
-   <widget class="QListWidget" name="listWidget">
+   <widget class="QListWidget" name="listWidget_yearlist">
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -84,6 +84,19 @@
     </property>
     <property name="selectionMode">
      <enum>QAbstractItemView::MultiSelection</enum>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_ShowTables">
+    <property name="geometry">
+     <rect>
+      <x>330</x>
+      <y>520</y>
+      <width>75</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Show Tables</string>
     </property>
    </widget>
   </widget>
