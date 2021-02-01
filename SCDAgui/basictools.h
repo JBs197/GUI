@@ -601,6 +601,30 @@ vector<wstring> get_file_paths(wstring folder_path)
     return file_paths;
 }
 
+// Given a root folder path, return a vector containing the short names of all subfolders within.
+vector<wstring> get_subfolder_shortnames(wstring root_folder)
+{
+    vector<wstring> subfolders;
+    wstring folder_name;
+    wstring folder_search = root_folder + L"\\*";
+    WIN32_FIND_DATAW info;
+    HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
+    if (hfile1 == INVALID_HANDLE_VALUE) { winerr(L"FindFirstFile-get_subfolder_shortnames"); }
+    DWORD attributes;
+
+    do
+    {
+        attributes = info.dwFileAttributes;
+        if (attributes == FILE_ATTRIBUTE_DIRECTORY)
+        {
+            subfolders.push_back(info.cFileName);
+        }
+    } while (FindNextFileW(hfile1, &info));
+
+    if (!FindClose(hfile1)) { winwarn(L"FindClose-get_subfolder_shortnames"); }
+    return subfolders;
+}
+
 // Given a root folder path, return a vector containing the full paths of all subfolders within.
 vector<wstring> get_subfolders(wstring root_folder)
 {
@@ -648,5 +672,6 @@ vector<vector<wstring>> get_subfolders2(wstring root_folder)
 
     return subfolders2;
 }
+
 
 #endif

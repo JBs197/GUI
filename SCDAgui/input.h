@@ -10,7 +10,7 @@ using namespace std;
 wstring db_root = L"F:";
 string db_root8 = "F:";
 wstring db_name = L"SCDA";
-QString db_path = QString::fromStdWString(db_root + L"\\" + db_name + L".db");
+QString db_path = "F:\\SCDA.db";
 string proj_root = "$${_PRO_FILE_PWD_}";
 vector<wstring> domains = { L".com", L".net", L".org", L".edu", L".ca" };
 

@@ -3,33 +3,27 @@
 #include "basictools.h"
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), ui(new Ui::MainWindow), nex(db_path)
+    : QMainWindow(parent), ui(new Ui::MainWindow)
 {
-    ui->setupUi(this);
+    percent = 0;
+    work_done = 0;
+    total_work = 0;
 
+    ui->setupUi(this);
     ui->comboBox_drives->addItem("D:");
     ui->comboBox_drives->addItem("E:");
     ui->comboBox_drives->addItem("F:");
     ui->comboBox_drives->addItem("G:");
+    ui->progressBar->setValue(percent);
 
+    db = QSqlDatabase::addDatabase("QSQLITE");
+    db.setDatabaseName(db_path);
+    if (!db.open()) { sqlerr(L"db.open-MainWindow constructor", db.lastError()); }
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
-}
-
-void db_initialize(QSqlDatabase& db, wstring& db_name)
-{
-    bool db_exist = 0;
-    QString db_path = QString::fromStdWString(db_root + L"\\" + db_name + L".db");
-    QStringList driver_list = db.drivers();
-    db.addDatabase(driver_list[0]);
-    qDebug() << db.driverName();
-    //db.setConnectOptions("QSQLITE_BUSY_TIMEOUT=3000");
-    db.setDatabaseName(db_path);
-    db_exist = db.open();
-    if (!db_exist) { sqlerr(L"open-db_initialize", db.lastError()); }
 }
 
 QStringList scan_years(wstring wdrive)
@@ -57,51 +51,18 @@ QStringList scan_years(wstring wdrive)
     return year_list;
 }
 
-void MainWindow::on_pushButton_Scan_clicked()
+QSqlQuery select_column_title(QString column, QString table)
 {
-    /*
-    QStringListModel *m_years = new QStringListModel();
-    m_years->setStringList(year_list);
-    ui->listView->setModel(m_years);
-    */
-    QStringList year_list = scan_years(wdrive);
-    ui->listWidget_yearlist->addItems(year_list);
-}
-
-void MainWindow::on_comboBox_drives_currentTextChanged(const QString &arg1)
-{
-    set_wdrive(arg1.toStdWString());
-}
-
-void MainWindow::on_pushButton_SelectAll_clicked()
-{
-    int year_count = ui->listWidget_yearlist->count();
-    for (int ii = 0; ii < year_count; ii++)
+    QSqlQuery query;
+    if (column == "*")
     {
-        ui->listWidget_yearlist->item(ii)->setSelected(true);
+        query.prepare("SELECT " + column + " FROM \"" + table + "\" ;");
     }
-}
-
-void MainWindow::on_pushButton_Commit_clicked()
-{
-    QList<QListWidgetItem *> years_to_do = ui->listWidget_yearlist->selectedItems();
-    int year_count = years_to_do.count();
-    std::vector<std::wstring> year_folders(year_count);
-    QString q_year;
-    wstring w_year;
-    for (int ii = 0; ii < year_count; ii++)
+    else
     {
-        q_year = years_to_do[ii]->text();
-        w_year = q_year.toStdWString();
-        year_folders[ii] = wdrive + L"\\" + w_year;
+        query.prepare("SELECT \"" + column + "\" FROM \"" + table + "\" ;");
     }
-    nex.tree_planting(year_folders);
-}
-
-void MainWindow::on_pushButton_ShowTables_clicked()
-{
-    set_model_string_list();
-    ui->listView_columns->setModel(&mdl);
+    return query;
 }
 
 int CSV_DB::read()
@@ -606,6 +567,10 @@ void CATA_DB::populate_table(QSqlDatabase& db)
     } while (FindNextFileW(hfile1, &info));
     log8(cata_number + " table populated.\r\n");
 }
+string CATA_DB::get_table_name()
+{
+    return table_name;
+}
 
 CATA_DB TREE_DB::tablemaker(QSqlDatabase& db, wstring cata_folder)
 {
@@ -614,34 +579,244 @@ CATA_DB TREE_DB::tablemaker(QSqlDatabase& db, wstring cata_folder)
     cata.populate_table(db);
     return cata;
 }
-void TREE_DB::tree_assembly(QSqlDatabase& db, vector<wstring>& yf)
+void TREE_DB::tree_assembly(QSqlDatabase& db, vector<vector<wstring>>& cf, int& tw)
 {
-    root_folder = yf[0].substr(0, 2);
-    year_folders = yf;
-    for (size_t ii = 0; ii < year_folders.size(); ii++)
+    int num_catalogues = 0;
+    root_folder = cf[0][0].substr(0, 2);
+    cata_folders = cf;
+    for (size_t ii = 0; ii < cata_folders.size(); ii++)
     {
-        cata_folders.push_back(get_subfolders(year_folders[ii]));
         trunk.push_back(vector<CATA_DB>());
+        num_catalogues += (int)cata_folders[ii].size();
+    }
+    tw = num_catalogues;
+    for (size_t ii = 0; ii < cata_folders.size(); ii++)
+    {
         for (size_t jj = 0; jj < cata_folders[ii].size(); jj++)
         {
             trunk[ii].push_back(tablemaker(db, cata_folders[ii][jj]));
         }
     }
-}
 
-NEXUS_DB::NEXUS_DB(const QString& db_path)
-{
-    db = QSqlDatabase::addDatabase("QSQLITE");
-    db.setDatabaseName(db_path);
-    if (!db.open()) { sqlerr(L"open-NEXUS_DB", db.lastError()); }
-    qDebug() << db.driverName();
 }
-void NEXUS_DB::tree_planting(vector<wstring>& yf)
+QStringList TREE_DB::get_table_list_years(vector<wstring>& year_folders)
 {
-    treebeard.tree_assembly(db, yf);
-}
-QStringList NEXUS_DB::get_table_list()
-{
-    QStringList table_list = db.tables(QSql::Tables);
+    QStringList table_list;
+    QString table_name;
+    vector<wstring> cata_folder_list;
+    wstring cata_name;
+    size_t pos1;
+    for (size_t ii = 0; ii < year_folders.size(); ii++)
+    {
+        cata_folder_list = get_subfolders(year_folders[ii]);
+        for (size_t jj = 0; jj < cata_folder_list.size(); jj++)
+        {
+            pos1 = cata_folder_list[jj].rfind(L"\\");
+            cata_name = cata_folder_list[jj].substr(pos1 + 1);
+            table_name = QString::fromStdWString(L"T" + cata_name);
+            table_list.append(table_name);
+        }
+    }
     return table_list;
 }
+
+
+
+void MainWindow::workload(int work)
+{
+    mpb.lock();
+    total_work += work;
+    mpb.unlock();
+}
+
+void MainWindow::progress()
+{
+    mpb.lock();
+    work_done++;
+    mpb.unlock();
+}
+
+void MainWindow::build_tree(QVector<QVector<QString>>& qtree)
+{
+    QVector<QTreeWidgetItem*> qroots;
+    QTreeWidgetItem *item;
+    for (qsizetype ii = 0; ii < qtree.size(); ii++)
+    {
+        item = new QTreeWidgetItem(ui->treeWidget_Scan);
+        item->setText(0, qtree[ii][0]);
+        item->setText(1, " ");
+        qroots.append(item);
+        add_children(item, qtree[ii]);
+    }
+    ui->treeWidget_Scan->addTopLevelItems(qroots);
+}
+
+void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
+{
+    QList<QTreeWidgetItem*> branch;
+    QTreeWidgetItem *item;
+    for (qsizetype ii = 1; ii < qlist.size(); ii++)
+    {
+        item = new QTreeWidgetItem();
+        item->setText(0, qlist[0]);
+        item->setText(1, qlist[ii]);
+        branch.append(item);
+    }
+    parent->addChildren(branch);
+}
+
+void MainWindow::get_columns_from_table(QStringList& column_list, QString& table_name)
+{
+    QString column_name;
+    QSqlQuery qselect = select_column_title("*", table_name);
+    if (!qselect.exec()) { sqlerr(L"qselect.exec-get_columns_from_table", qselect.lastError()); }
+    while (qselect.next())
+    {
+        column_name = qselect.value(0).toString();
+        column_list.append(column_name);
+    }
+}
+
+void MainWindow::set_model_string_list(QStringList& qstring_list)
+{
+    mdl.setStringList(qstring_list);
+}
+
+void MainWindow::on_pushButton_Scan_clicked()
+{
+    vector<vector<wstring>> wtree = get_subfolders2(wdrive);
+    QVector<QVector<QString>> qtree;
+    wstring wyear, wcata;
+    QString qyear, qcata;
+    size_t pos1, pos2;
+    for (size_t ii = 0; ii < wtree.size(); ii++)
+    {
+        qtree.append(QVector<QString>());
+        pos1 = wtree[ii][0].find(L"\\");
+        pos1++;
+        pos2 = wtree[ii][0].find(L"\\", pos1);
+        wyear = wtree[ii][0].substr(pos1, pos2 - pos1);
+        qyear = QString::fromStdWString(wyear);
+        qtree[ii].append(qyear);
+        for (size_t jj = 0; jj < wtree[ii].size(); jj++)
+        {
+            pos1 = wtree[ii][jj].rfind(L"\\");
+            wcata = wtree[ii][jj].substr(pos1 + 1);
+            qcata = QString::fromStdWString(wcata);
+            qtree[ii].append(qcata);
+        }
+    }
+
+    build_tree(qtree);
+
+    /*
+    QStringList year_list = scan_years(wdrive);
+    ui->listWidget_yearlist->addItems(year_list);
+    */
+}
+
+void MainWindow::on_comboBox_drives_currentTextChanged(const QString &arg1)
+{
+    set_wdrive(arg1.toStdWString());
+}
+
+void MainWindow::on_pushButton_SelectAll_clicked()
+{
+    /*
+    int year_count = ui->treeWidget_Scan->count();
+    for (int ii = 0; ii < year_count; ii++)
+    {
+        ui->listWidget_yearlist->item(ii)->setSelected(true);
+    }
+    */
+}
+
+void MainWindow::on_pushButton_Commit_clicked()
+{
+    vector<vector<wstring>> cata_folders(1, vector<wstring>());
+    QList<QTreeWidgetItem *> catas_to_do = ui->treeWidget_Scan->selectedItems();
+    QVector<QString> years_loaded;
+    QString qyear, qcata;
+    wstring cata_path;
+    qsizetype year_index = 0;
+    for (qsizetype ii = 0; ii < catas_to_do.count(); ii++)
+    {
+        qyear = catas_to_do[ii]->text(0);
+        qcata = catas_to_do[ii]->text(1);
+        for (qsizetype jj = 0; jj < years_loaded.size(); jj++)
+        {
+            if (qyear == years_loaded[jj])
+            {
+                year_index = jj;
+                break;
+            }
+            else if (jj == years_loaded.size() - 1)
+            {
+                year_index = years_loaded.size();
+                years_loaded.append(qyear);
+                cata_folders.push_back(vector<wstring>());
+            }
+        }
+        cata_path = wdrive + L"\\" + qyear.toStdWString() + L"\\" + qcata.toStdWString();
+        cata_folders[year_index].push_back(cata_path);
+    }
+
+    treebeard.tree_assembly(db, cata_folders, total_work);
+}
+
+void MainWindow::on_pushButton_ThrCommit_clicked()
+{
+    vector<wstring> cata_folders;
+    QList<QTreeWidgetItem *> catas_to_do = ui->treeWidget_Scan->selectedItems();
+    QStringList qlist;
+    QString qyear, qcata;
+    wstring cata_path;
+    for (qsizetype ii = 0; ii < catas_to_do.count(); ii++)
+    {
+        qyear = catas_to_do[ii]->text(0);
+        qcata = catas_to_do[ii]->text(1);
+        cata_path = wdrive + L"\\" + qyear.toStdWString() + L"\\" + qcata.toStdWString();
+        cata_folders.push_back(cata_path);
+    }
+
+    WORKTHREAD peon(db);
+    peon.wpreload(cata_folders);
+    connect(&peon, &WORKTHREAD::jobsdone, this, &MainWindow::progress);
+    connect(&peon, &WORKTHREAD::setgoal, this, &MainWindow::workload);
+    QFuture<void> bbq = QtConcurrent::run(QThreadPool::globalInstance(), &WORKTHREAD::begin, 1);
+}
+
+void MainWindow::on_pushButton_ShowTables_clicked()
+{
+    QStringList table_list = db.tables(QSql::Tables);
+    if (table_list.size() < 1) { sqlerr(L"db.tables-pushButton_ShowTables", db.lastError()); }
+    set_model_string_list(table_list);
+    ui->listView_columns->setModel(&mdl);
+}
+
+void MainWindow::on_pushButton_ShowColumns_clicked()
+{
+    QList<QTreeWidgetItem *> catas_to_do = ui->treeWidget_Scan->selectedItems();
+    QString qcata;
+    QStringList table_list;
+    for (qsizetype ii = 0; ii < catas_to_do.size(); ii++)
+    {
+        qcata = catas_to_do[ii]->text(1);
+        table_list.append("T" + qcata);
+    }
+
+    QStringList column_list;
+    for (qsizetype ii = 0; ii < table_list.size(); ii++)
+    {
+        get_columns_from_table(column_list, table_list[ii]);
+    }
+    set_model_string_list(column_list);
+    ui->listView_columns->setModel(&mdl);
+}
+
+void MainWindow::on_treeWidget_Scan_itemClicked(QTreeWidgetItem *item, int column)
+{
+    // add "select all elements in year" if parent item is clicked.
+}
+
+

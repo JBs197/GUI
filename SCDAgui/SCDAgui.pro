@@ -1,4 +1,4 @@
-QT       += core gui sql
+QT       += core gui sql concurrent
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -10,14 +10,17 @@ CONFIG += c++17
 
 SOURCES += \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    workthread.cpp
 
 HEADERS += \
     DBclasses.h \
-    DBfunctions.h \
     basictools.h \
     input.h \
-    mainwindow.h
+    mainwindow.h \
+    relay.h \
+    workhorse.h \
+    workthread.h
 
 FORMS += \
     mainwindow.ui

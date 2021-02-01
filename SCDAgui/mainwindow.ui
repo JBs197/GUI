@@ -17,10 +17,10 @@
    <widget class="QListView" name="listView_columns">
     <property name="geometry">
      <rect>
-      <x>170</x>
+      <x>320</x>
       <y>10</y>
-      <width>621</width>
-      <height>501</height>
+      <width>471</width>
+      <height>471</height>
      </rect>
     </property>
    </widget>
@@ -73,20 +73,78 @@
      <string>Commit</string>
     </property>
    </widget>
-   <widget class="QListWidget" name="listWidget_yearlist">
+   <widget class="QPushButton" name="pushButton_ShowTables">
+    <property name="geometry">
+     <rect>
+      <x>410</x>
+      <y>520</y>
+      <width>75</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Show Tables</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_ShowColumns">
+    <property name="geometry">
+     <rect>
+      <x>500</x>
+      <y>520</y>
+      <width>81</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Show Columns</string>
+    </property>
+   </widget>
+   <widget class="QProgressBar" name="progressBar">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>490</y>
+      <width>781</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="value">
+     <number>24</number>
+    </property>
+   </widget>
+   <widget class="QTreeWidget" name="treeWidget_Scan">
     <property name="geometry">
      <rect>
       <x>10</x>
       <y>10</y>
-      <width>151</width>
-      <height>501</height>
+      <width>301</width>
+      <height>471</height>
      </rect>
+    </property>
+    <property name="alternatingRowColors">
+     <bool>false</bool>
     </property>
     <property name="selectionMode">
      <enum>QAbstractItemView::MultiSelection</enum>
     </property>
+    <property name="iconSize">
+     <size>
+      <width>2</width>
+      <height>2</height>
+     </size>
+    </property>
+    <column>
+     <property name="text">
+      <string>Year</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Catalogue</string>
+     </property>
+    </column>
    </widget>
-   <widget class="QPushButton" name="pushButton_ShowTables">
+   <widget class="QPushButton" name="pushButton_ThrCommit">
     <property name="geometry">
      <rect>
       <x>330</x>
@@ -96,7 +154,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>Show Tables</string>
+     <string>ThrCommit</string>
     </property>
    </widget>
   </widget>

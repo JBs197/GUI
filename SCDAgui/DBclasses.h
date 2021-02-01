@@ -4,7 +4,6 @@
 #include <string>
 #include <windows.h>
 #include <QtSql>
-//#include "basictools.h"
 
 using namespace std;
 
@@ -48,6 +47,7 @@ public:
     void init(wstring); // Given a catalogue folder, populate the new CATA_DB object's internal variables.
     void prepare_table(QSqlDatabase&); // Each table in the database corresponds to one catalogue.
     void populate_table(QSqlDatabase&); // Read every CSV's values into the table.
+    string get_table_name();
 };
 
 // This object represents the organizational union of all catalogues chosen to be loaded.
@@ -59,20 +59,20 @@ class TREE_DB {
 public:
     TREE_DB() {}
     ~TREE_DB() {}
-    void tree_assembly(QSqlDatabase&, vector<wstring>&); // Given a root folder, build the database using all CSVs in all subfolders within.
+    void tree_assembly(QSqlDatabase&, vector<vector<wstring>>&, int&); // Given a root folder, build the database using all CSVs in all subfolders within.
     CATA_DB tablemaker(QSqlDatabase&, wstring); // Given a database and a folder containing CSV files, make a table for that catalogue.
+    QStringList get_table_list_years(vector<wstring>&);
 };
 
-// This object controls all QTSQL functions.
-class NEXUS_DB {
-    QSqlDatabase db;
-    TREE_DB treebeard;
+// This object contains all the information necessary for a workthread to complete its task.
+class PARTS_DB {
 
 public:
-    NEXUS_DB(const QString&);
-    ~NEXUS_DB() {}
-    void tree_planting(vector<wstring>&);
-    QStringList get_table_list();
+    PARTS_DB() {}
+    ~PARTS_DB() {}
+    int function;  // Specifies the task to be done.
+    QStringList qlist;  // Multi-purpose list needed for the chosen function.
+    vector<vector<wstring>> wfolders2;
 };
 
 #endif
