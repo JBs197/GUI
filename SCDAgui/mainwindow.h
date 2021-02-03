@@ -3,9 +3,10 @@
 #include <QMainWindow>
 #include <QListWidgetItem>
 #include <QTreeWidgetItem>
-#include <QSemaphore>
+#include <QThreadPool>
 #include <QtConcurrent>
-#include "workthread.h"
+#include <QFutureWatcher>
+#include "workthreader.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -54,8 +55,9 @@ private:
     QStringListModel mdl;
     int percent = 0;
     int work_done = 0;
+    double percent_per_workpiece;
     int total_work = 0;
-    RELAY hub(int percent, int work_done, int total_work);
+    //RELAY hub(int percent, int work_done, int total_work);
     QMutex mpb;
 };
 

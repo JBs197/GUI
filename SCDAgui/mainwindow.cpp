@@ -397,10 +397,10 @@ void CATA_DB::init(wstring folder_path)
     wstring folder_search = folder + L"\\*.csv";
     WIN32_FIND_DATAW info;
     HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
-    if (hfile1 == INVALID_HANDLE_VALUE) { err(L"FindFirstFile-init"); }
+    if (hfile1 == INVALID_HANDLE_VALUE) { winerr(L"FindFirstFile-CATA_DB.init"); }
     wstring sample_name = folder + L"\\" + info.cFileName;
     HANDLE hfile2 = CreateFileW(sample_name.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hfile2 == INVALID_HANDLE_VALUE) { err(L"CreateFile-init"); }
+    if (hfile2 == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-CATA_DB.init"); }
 
     wstring wfile = bin_memory(hfile2);
     pos1 = wfile.rfind(L"Catalogue Number ", wfile.size() - 4);
@@ -475,7 +475,20 @@ void CATA_DB::init(wstring folder_path)
     if (!CloseHandle(hfile2)) { warn(L"CloseHandle-init"); }
     log8(cata_number + " initialized.\r\n");
 }
-void CATA_DB::prepare_table(QSqlDatabase& db)
+int CATA_DB::count_csv()
+{
+    wstring folder_search = folder + L"\\*.csv";
+    WIN32_FIND_DATAW info;
+    HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
+    if (hfile1 == INVALID_HANDLE_VALUE) { winerr(L"FindFirstFile-CATA_DB.count_csv"); }
+    int count = 0;
+    do
+    {
+        count++;
+    } while (FindNextFileW(hfile1, &info));
+    return count;
+}
+void CATA_DB::prepare_table()
 {
     string sql = "CREATE TABLE IF NOT EXISTS \"" + table_name + "\" ( GID INTEGER PRIMARY KEY, ";
     for (size_t ii = 0; ii < variables.size(); ii++)
@@ -500,8 +513,9 @@ void CATA_DB::prepare_table(QSqlDatabase& db)
     }
     log8(cata_number + " table prepared.\r\n");
 }
-void CATA_DB::populate_table(QSqlDatabase& db)
+void CATA_DB::populate_table()
 {
+    vector<wstring> csv_paths;
     wstring folder_search = folder + L"\\*.csv";
     WIN32_FIND_DATAW info;
     HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
@@ -565,13 +579,16 @@ void CATA_DB::populate_table(QSqlDatabase& db)
             }
         }
     } while (FindNextFileW(hfile1, &info));
+
+
+
     log8(cata_number + " table populated.\r\n");
 }
 string CATA_DB::get_table_name()
 {
     return table_name;
 }
-
+/*
 CATA_DB TREE_DB::tablemaker(QSqlDatabase& db, wstring cata_folder)
 {
     CATA_DB cata(cata_folder);
@@ -619,7 +636,7 @@ QStringList TREE_DB::get_table_list_years(vector<wstring>& year_folders)
     }
     return table_list;
 }
-
+*/
 
 
 void MainWindow::workload(int work)
@@ -633,6 +650,7 @@ void MainWindow::progress()
 {
     mpb.lock();
     work_done++;
+    percent = (int)(work_done * percent_per_workpiece);
     mpb.unlock();
 }
 
@@ -779,11 +797,27 @@ void MainWindow::on_pushButton_ThrCommit_clicked()
         cata_folders.push_back(cata_path);
     }
 
-    WORKTHREAD peon(db);
+
+    QFuture<void> bbq;
+    double percent_per_cata = 100.0 / (double)cata_folders.size();
+    int csv_per_cata;
+    int max_threads = QThread::idealThreadCount() - 1;  // For system stability.
+    QThreadPool *qthrpool = QThreadPool::globalInstance();
+    qthrpool->setMaxThreadCount(max_threads);
+    WORKTHREADER peon(db);
     peon.wpreload(cata_folders);
-    connect(&peon, &WORKTHREAD::jobsdone, this, &MainWindow::progress);
-    connect(&peon, &WORKTHREAD::setgoal, this, &MainWindow::workload);
-    QFuture<void> bbq = QtConcurrent::run(QThreadPool::globalInstance(), &WORKTHREAD::begin, 1);
+    connect(&peon, &WORKTHREADER::jobsdone, this, &MainWindow::progress);
+    for (size_t ii = 0; ii < cata_folders.size(); ii++)  // For each catalogue...
+    {
+        peon.begin(1, csv_per_cata);  // ... initialize cata-wide values.
+        percent_per_workpiece = percent_per_cata / (double)csv_per_cata;  // ... adjust the scale of the progress bar.
+        peon.add_cata();
+    }
+
+
+
+    //connect(&peon, &WORKTHREADER::setgoal, this, &MainWindow::workload);
+    //QFuture<void> bbq = QtConcurrent::run(QThreadPool::globalInstance(), &WORKTHREAD::begin, 1);
 }
 
 void MainWindow::on_pushButton_ShowTables_clicked()

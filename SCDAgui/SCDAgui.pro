@@ -11,7 +11,7 @@ CONFIG += c++17
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
-    workthread.cpp
+    workthreader.cpp
 
 HEADERS += \
     DBclasses.h \
@@ -20,7 +20,7 @@ HEADERS += \
     mainwindow.h \
     relay.h \
     workhorse.h \
-    workthread.h
+    workthreader.h
 
 FORMS += \
     mainwindow.ui

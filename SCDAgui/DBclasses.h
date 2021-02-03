@@ -33,6 +33,7 @@ public:
 
 // This object represents one catalogue folder, as geographically categorized by Statistics Canada.
 class CATA_DB {
+    QSqlDatabase& db;
     wstring folder; // Full path of the catalogue folder containing the CSVs.
     int col_width;
     string cata_number; // Stats Can's alphanumeric designation for the catalogue.
@@ -42,11 +43,12 @@ class CATA_DB {
     vector<string> column_header; // Descriptor title for each value in the 1D CSV row.
     vector<vector<string>> variables; // Form [variable][variable type, variable shown in CSV]
 public:
-    CATA_DB(wstring folder_path) { init(folder_path); }
+    explicit CATA_DB(QSqlDatabase& datab) : db(datab) {}
     ~CATA_DB() {}
     void init(wstring); // Given a catalogue folder, populate the new CATA_DB object's internal variables.
-    void prepare_table(QSqlDatabase&); // Each table in the database corresponds to one catalogue.
-    void populate_table(QSqlDatabase&); // Read every CSV's values into the table.
+    int count_csv();  // Count the number of CSVs to read from this catalogue, for the progress bar.
+    void prepare_table(); // Each table in the database corresponds to one catalogue.
+    void populate_table(); // Read every CSV's values into the table.
     string get_table_name();
 };
 
