@@ -5,6 +5,7 @@ vector<vector<wstring>> objects;
 bool begun_logging = 0;
 wstring db_root = L"F:";
 string db_root8 = "F:";
+QString db_qroot = "F:";
 wstring db_name = L"SCDA";
 QString db_path = "F:\\SCDA.db";
 string proj_root = "$${_PRO_FILE_PWD_}";

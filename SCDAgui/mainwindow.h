@@ -3,7 +3,10 @@
 
 #include <QMainWindow>
 #include <QTreeWidgetItem>
+#include <QtConcurrent>
+#include <QtSql>
 #include "threading.h"
+#include "catalogue.h"
 #include "basictools.h"
 
 QT_BEGIN_NAMESPACE
@@ -15,8 +18,15 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+    QSqlDatabase db;
+
+signals:
+    void begin_working();
+
+public slots:
+    void feedback();
 
 private slots:
 
@@ -29,7 +39,10 @@ private slots:
 private:
     Ui::MainWindow *ui;
     std::wstring wdrive;
+    QString qdrive;
+    int bbq;
     void build_tree(QVector<QVector<QString>>&);
     void add_children(QTreeWidgetItem*, QVector<QString>&);
+    void prepare_table(QString&);
 };
 #endif // MAINWINDOW_H

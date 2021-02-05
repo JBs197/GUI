@@ -10,11 +10,20 @@ MainWindow::MainWindow(QWidget *parent)
     ui->cB_drives->addItem("E:");
     ui->cB_drives->addItem("F:");
     ui->cB_drives->addItem("G:");
+
+    db = QSqlDatabase::addDatabase("QSQLITE");
+    db.setDatabaseName("F:\\SCDA.db");  // NOTE: REMOVE HARDCODING LATER
+    if (!db.open()) { sqlerr(L"db.open-MainWindow constructor", db.lastError()); }
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::feedback()
+{
+    qDebug() << "Report returned from thread: ";
 }
 
 void MainWindow::build_tree(QVector<QVector<QString>>& qtree)
@@ -46,9 +55,16 @@ void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
     parent->addChildren(branch);
 }
 
+void MainWindow::prepare_table(QString& qpath)
+{
+    CATALOGUE cata(db);
+    cata.insert_table(qpath);
+}
+
 void MainWindow::on_cB_drives_currentTextChanged(const QString &arg1)
 {
     wdrive = arg1.toStdWString();
+    qdrive = arg1;
 }
 
 void MainWindow::on_pB_scan_clicked()
@@ -82,6 +98,17 @@ void MainWindow::on_pB_scan_clicked()
 
 void MainWindow::on_pB_insert_clicked()
 {
-    qDebug() << "Button was clicked in " << QThread::currentThread();
+    QList<QTreeWidgetItem *> catas_to_do = ui->tW_cata->selectedItems();
+    QString qyear = catas_to_do[0]->text(0);
+    QString qcata = catas_to_do[0]->text(1);
+    QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
+    prepare_table(cata_path);
 
+    /*
+    qDebug() << "Button was clicked in " << QThread::currentThread();
+    THREADING rocinante;
+    connect(this, &MainWindow::begin_working, &rocinante, &THREADING::work_order);
+    connect(&rocinante, &THREADING::jobsdone, this, &MainWindow::feedback);
+    QFuture<void> future = QtConcurrent::run(&THREADING::begin, &rocinante);
+    */
 }
