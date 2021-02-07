@@ -11,15 +11,19 @@ CONFIG += c++17
 SOURCES += \
     basictools.cpp \
     catalogue.cpp \
+    csv.cpp \
     main.cpp \
     mainwindow.cpp \
+    row.cpp \
     threading.cpp
 
 HEADERS += \
     asyncfuture.h \
     basictools.h \
     catalogue.h \
+    csv.h \
     mainwindow.h \
+    row.h \
     threading.h
 
 FORMS += \

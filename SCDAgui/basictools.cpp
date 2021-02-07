@@ -83,6 +83,7 @@ void err8(string func8)
     }
     exit(EXIT_FAILURE);
 }
+/*
 void sqlerr(wstring func, QSqlError qerror)
 {
     string func8 = utf16to8(func);
@@ -100,6 +101,7 @@ void sqlerr(wstring func, QSqlError qerror)
     }
     exit(EXIT_FAILURE);
 }
+*/
 void winerr(wstring func)
 {
     DWORD num = GetLastError();
@@ -239,6 +241,30 @@ void log8(string note8)
         CloseHandle(hprinter);
     }
 }
+void qlog(QString qnote)
+{
+    string note8 = qnote.toStdString();
+    string name = db_root8 + "\\SCDA Process Log.txt";
+    string message = timestamperA() + "  " + note8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log"); }
+    if (!begun_logging)
+    {
+        if (!DeleteFileA(name.c_str())) { warn(L"DeleteFile-log"); }
+        if (!CloseHandle(hprinter)) { warn(L"CloseHandle-log"); }
+        hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log(after deletion)"); }
+        begun_logging = 1;
+    }
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
 
 // Remove string chars which cause problems with SQL formatting. Returns the number of blank spaces which
 // were present at the string's start, indicating the string is a subheading or subsubheading.
@@ -350,6 +376,18 @@ QString q_memory(HANDLE& hfile)
     QString qfile = QString::fromWCharArray(buffer, size / 2);
     delete[] buffer;
     return qfile;
+}
+wstring w_memory(wstring& full_path)
+{
+    HANDLE hfile = CreateFileW(full_path.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-w_memory"); }
+    DWORD size = GetFileSize(hfile, NULL);
+    DWORD bytes_read;
+    LPWSTR buffer = new WCHAR[size / 2];
+    if (!ReadFile(hfile, buffer, size, &bytes_read, NULL)) { winerr(L"ReadFile-w_memory"); }
+    wstring wfile(buffer, size / 2);
+    delete[] buffer;
+    return wfile;
 }
 
 // Given a full path name, delete the file/folder.
@@ -561,7 +599,7 @@ int download(wstring url, wstring folder, wstring filename)
     return 0;
 }
 
-// Given a folder path, return a vector containing the full paths of all files within. Does not list subfolders.
+// Given a folder path, return a vector containing the file paths of all files within. Does not list subfolders.
 vector<wstring> get_file_paths(wstring folder_path)
 {
     vector<wstring> file_paths;
@@ -583,6 +621,30 @@ vector<wstring> get_file_paths(wstring folder_path)
     } while (FindNextFileW(hfile1, &info));
 
     if (!FindClose(hfile1)) { winwarn(L"FindClose-get_file_paths"); }
+    return file_paths;
+}
+vector<wstring> get_file_path_endings(wstring folder_path, size_t pos0)
+{
+    vector<wstring> file_paths;
+    wstring folder_search = folder_path + L"\\*";
+    WIN32_FIND_DATAW info;
+    HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
+    if (hfile1 == INVALID_HANDLE_VALUE) { winerr(L"FindFirstFile-get_file_path_endings"); }
+    wstring temp1, file_path;
+    DWORD attributes;
+
+    do
+    {
+        attributes = info.dwFileAttributes;
+        if (attributes == FILE_ATTRIBUTE_NORMAL)
+        {
+            temp1 = folder_path + L"\\" + info.cFileName;
+            file_path = temp1.substr(pos0);
+            file_paths.push_back(file_path);
+        }
+    } while (FindNextFileW(hfile1, &info));
+
+    if (!FindClose(hfile1)) { winwarn(L"FindClose-get_file_path_endings"); }
     return file_paths;
 }
 

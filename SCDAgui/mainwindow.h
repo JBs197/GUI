@@ -21,6 +21,10 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
     QSqlDatabase db;
+    void sqlerr(QString, QSqlError);
+    void logger(QString&);
+    void insert_csv(QString&, QString&);
+    void insert_table(QString&, QString&);
 
 signals:
     void begin_working();
@@ -40,9 +44,17 @@ private:
     Ui::MainWindow *ui;
     std::wstring wdrive;
     QString qdrive;
-    int bbq;
+    QReadWriteLock m_executor;
+    QMutex m_err, m_log;
+    wstring root_directory = L"F:";  // NOTE: REMOVE HARDCODING LATER
     void build_tree(QVector<QVector<QString>>&);
     void add_children(QTreeWidgetItem*, QVector<QString>&);
-    void prepare_table(QString&);
+    void executor(QString&, QSqlError&);
+    int build_table(QString&);
+    void populate_table(int);
+    void clear_log();
+    QString read_csv(CATALOGUE&, int);
+    vector<CATALOGUE> binder;
 };
+
 #endif // MAINWINDOW_H

@@ -13,12 +13,67 @@ MainWindow::MainWindow(QWidget *parent)
 
     db = QSqlDatabase::addDatabase("QSQLITE");
     db.setDatabaseName("F:\\SCDA.db");  // NOTE: REMOVE HARDCODING LATER
-    if (!db.open()) { sqlerr(L"db.open-MainWindow constructor", db.lastError()); }
+    if (!db.open()) { sqlerr("db.open, in MainWindow constructor", db.lastError()); }
+
+    clear_log();
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+// Threadsafe error log function specific to SQL errors.
+void MainWindow::sqlerr(QString qfunc, QSqlError qerror)
+{
+    string func8 = qfunc.toStdString();
+    string name = utf16to8(root_directory) + "\\SCDA Error Log.txt";
+    QString qmessage = qerror.text();
+    string message = timestamperA() + " SQL error inside " + func8 + "\r\n" + qmessage.toStdString() + "\r\n";
+    m_err.lock();
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE) { qDebug() << "CreateFileA error, in sqlerr, from " << qfunc << ". " << qerror.text(); }
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    if (WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL))
+    {
+        if (!CloseHandle(hprinter)) { qDebug() << "CloseHandle error, in sqlerr, from " << qfunc << ". " << qerror.text(); }
+    }
+    else
+    {
+        qDebug() << "WriteFile error, in sqlerr, from " << qfunc << ". " << qerror.text();
+    }
+    m_err.unlock();
+    exit(EXIT_FAILURE);
+}
+
+// Threadsafe logger function for the most recent program runtime.
+void MainWindow::logger(QString& qnote)
+{
+    string note8 = qnote.toStdString();
+    string name = utf16to8(root_directory) + "\\SCDA Process Log.txt";
+    string message = timestamperA() + "  " + note8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log"); }
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+
+// Delete the previous runtime's log file.
+void MainWindow::clear_log()
+{
+    string name = utf16to8(root_directory) + "\\SCDA Process Log.txt";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-refresh_log"); }
+    if (!DeleteFileA(name.c_str())) { warn(L"DeleteFile-refresh_log"); }
+    if (!CloseHandle(hprinter)) { warn(L"CloseHandle-refresh_log"); }
 }
 
 void MainWindow::feedback()
@@ -55,10 +110,76 @@ void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
     parent->addChildren(branch);
 }
 
-void MainWindow::prepare_table(QString& qpath)
+// Creates a catalogue object with all the column headers, then inserts it into the database.
+// Returns the index of the catalogue object in Mainwindow's binder.
+int MainWindow::build_table(QString& qpath)
 {
-    CATALOGUE cata(db);
-    cata.insert_table(qpath);
+    CATALOGUE cata;
+    cata.set_path(qpath);
+    cata.initialize_table();
+    QString stmt = cata.get_create_table_statement();
+    insert_table(stmt, qpath);
+    cata.make_name_tree();
+    int index = (int)binder.size();
+    binder.push_back(cata);
+    return index;
+}
+
+// (MULTITHREADED) Reads all CSV files for the given catalogue index, and inserts the values into the db as rows.
+void MainWindow::populate_table(int cata_index)
+{
+
+}
+
+// (SINGLETHREADED) Workhorse function to read a local CSV file and convert it into a SQL statement.
+QString MainWindow::read_csv(CATALOGUE& cata, int csv_index)
+{
+    wstring csv_path = cata.get_csv_path(csv_index);
+    wstring wfile = w_memory(csv_path);
+    QString aaaa = "aaaaaaa";
+    return aaaa;
+}
+
+void MainWindow::insert_table(QString& stmt, QString& folder_path)
+{
+    QSqlError qerror;
+    m_executor.lockForWrite();
+    executor(stmt, qerror);
+    m_executor.unlock();
+    if (qerror.isValid())
+    {
+        sqlerr("insert_table in " + folder_path, qerror);
+    }
+    string spath = folder_path.toStdString();
+    size_t pos = spath.rfind("\\");
+    string sname = spath.substr(pos + 1);
+    log8(sname + " was inserted into the database.");
+}
+
+void MainWindow::insert_csv(QString& stmt, QString& file_path)
+{
+    QSqlError qerror;
+    m_executor.lockForWrite();
+    executor(stmt, qerror);
+    m_executor.unlock();
+    if (qerror.isValid())
+    {
+        sqlerr("insert_csv in " + file_path, qerror);
+    }
+    string spath = file_path.toStdString();
+    size_t pos = spath.rfind("\\");
+    string sname = spath.substr(pos + 1);
+    log8(sname + " was inserted into the database.");
+}
+
+void MainWindow::executor(QString& stmt, QSqlError& qerror)
+{
+    QSqlQuery query(db);
+    query.prepare(stmt);
+    if (!query.exec())
+    {
+        qerror = query.lastError();
+    }
 }
 
 void MainWindow::on_cB_drives_currentTextChanged(const QString &arg1)
@@ -102,7 +223,9 @@ void MainWindow::on_pB_insert_clicked()
     QString qyear = catas_to_do[0]->text(0);
     QString qcata = catas_to_do[0]->text(1);
     QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
-    prepare_table(cata_path);
+    int cata_index = build_table(cata_path);
+    log8(qcata.toStdString() + " was assigned binder index " + to_string(cata_index));
+    populate_table(cata_index);
 
     /*
     qDebug() << "Button was clicked in " << QThread::currentThread();

@@ -29,7 +29,7 @@ string timestamperA();
 // Make an entry into the error log. If severe, terminate the application.
 void err(wstring);
 void err8(string);
-void sqlerr(wstring, QSqlError);
+//void sqlerr(wstring, QSqlError);
 void winerr(wstring);
 void warn(wstring);
 void warn8(string);
@@ -48,6 +48,7 @@ int clean(wstring&, int);
 // Read into memory a local file.
 wstring bin_memory(HANDLE&);
 QString q_memory(HANDLE&);
+wstring w_memory(wstring&);
 
 // Given a full path name, delete the file/folder.
 void delete_file(wstring);
@@ -59,8 +60,9 @@ void CALLBACK call(HINTERNET, DWORD_PTR, DWORD, LPVOID, DWORD);
 // Given destination folder and filename, will download the file at the URL.
 int download(wstring, wstring, wstring);
 
-// Given a folder path, return a vector containing the full paths of all files within. Does not list subfolders.
+// Given a folder path, return a vector containing the file paths of all files within. Does not list subfolders.
 vector<wstring> get_file_paths(wstring);
+vector<wstring> get_file_path_endings(wstring, size_t);
 
 // Given a root folder path, return a vector containing the full paths of all subfolders within.
 vector<wstring> get_subfolders(wstring);
