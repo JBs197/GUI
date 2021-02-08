@@ -355,6 +355,38 @@ int clean(wstring& out, int mode)
     */
     return count;
 }
+int qclean(QString& bbq, int mode)
+{
+    int count = 0;
+    int pos1, pos2;
+    pos1 = bbq.indexOf('[');
+    if (pos1 > 0)
+    {
+        pos2 = bbq.indexOf(']', pos1);
+        bbq.remove(pos1, pos2 - pos1 + 1);
+    }
+    if (mode == 1)
+    {
+        pos1 = bbq.indexOf('\'');
+        while (pos1 > 0)
+        {
+            bbq.replace(pos1, 1, "''");
+            pos1 = bbq.indexOf('\'', pos1 + 2);
+        }
+    }
+    while (1)
+    {
+        if (bbq.front() == ' ') { bbq.remove(0, 1); count++; }
+        else { break; }
+    }
+    while (1)
+    {
+        if (bbq.back() == ' ') { bbq.remove(bbq.size() - 1, 1); }
+        else { break; }
+    }
+    return count;
+}
+
 
 // Read into memory a local file.
 wstring bin_memory(HANDLE& hfile)
@@ -719,3 +751,24 @@ vector<vector<wstring>> get_subfolders2(wstring root_folder)
 
     return subfolders2;
 }
+
+// Search a given vector for a particular value, and return the index. If not found, insert and return.
+// Returns negative (error) if a new entry fails to match and is not the largest entry.
+int index_card(vector<int>& shelf, int book)
+{
+    int size = (int)shelf.size();
+    for (int ii = 0; ii < size; ii++)
+    {
+        if (book == shelf[ii])
+        {
+            return ii;
+        }
+    }
+    if (book < shelf[size - 1])
+    {
+        return -1;
+    }
+    shelf.push_back(book);
+    return size;
+}
+

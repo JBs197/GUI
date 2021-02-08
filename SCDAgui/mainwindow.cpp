@@ -117,8 +117,8 @@ int MainWindow::build_table(QString& qpath)
     CATALOGUE cata;
     cata.set_path(qpath);
     cata.initialize_table();
-    QString stmt = cata.get_create_table_statement();
-    insert_table(stmt, qpath);
+    QVector<QString> stmts = cata.get_create_table_statements();
+    insert_tables(stmts, qpath);
     cata.make_name_tree();
     int index = (int)binder.size();
     binder.push_back(cata);
@@ -128,7 +128,7 @@ int MainWindow::build_table(QString& qpath)
 // (MULTITHREADED) Reads all CSV files for the given catalogue index, and inserts the values into the db as rows.
 void MainWindow::populate_table(int cata_index)
 {
-
+    // DO read_csv per thread !
 }
 
 // (SINGLETHREADED) Workhorse function to read a local CSV file and convert it into a SQL statement.
@@ -140,15 +140,19 @@ QString MainWindow::read_csv(CATALOGUE& cata, int csv_index)
     return aaaa;
 }
 
-void MainWindow::insert_table(QString& stmt, QString& folder_path)
+// (MULTITHREADED) Insert a list of new tables/subtables into the database.
+void MainWindow::insert_tables(QVector<QString>& stmts, QString& folder_path)
 {
     QSqlError qerror;
-    m_executor.lockForWrite();
-    executor(stmt, qerror);
-    m_executor.unlock();
-    if (qerror.isValid())
+    for (int ii = 0; ii < stmts.size(); ii++)
     {
-        sqlerr("insert_table in " + folder_path, qerror);
+        m_executor.lockForWrite();
+        executor(stmts[ii], qerror);
+        m_executor.unlock();
+        if (qerror.isValid())
+        {
+            sqlerr("insert_table in " + folder_path, qerror);
+        }
     }
     string spath = folder_path.toStdString();
     size_t pos = spath.rfind("\\");
@@ -190,7 +194,6 @@ void MainWindow::on_cB_drives_currentTextChanged(const QString &arg1)
 
 void MainWindow::on_pB_scan_clicked()
 {
-
     std::vector<std::vector<std::wstring>> wtree = get_subfolders2(wdrive);
     QVector<QVector<QString>> qtree;
     wstring wyear, wcata;
@@ -234,4 +237,14 @@ void MainWindow::on_pB_insert_clicked()
     connect(&rocinante, &THREADING::jobsdone, this, &MainWindow::feedback);
     QFuture<void> future = QtConcurrent::run(&THREADING::begin, &rocinante);
     */
+}
+
+void MainWindow::on_pB_test_clicked()
+{
+    QList<QTreeWidgetItem *> catas_to_do = ui->tW_cata->selectedItems();
+    QString qyear = catas_to_do[0]->text(0);
+    QString qcata = catas_to_do[0]->text(1);
+    QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
+    int cata_index = build_table(cata_path);
+
 }

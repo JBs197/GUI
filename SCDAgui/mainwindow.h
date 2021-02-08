@@ -5,7 +5,7 @@
 #include <QTreeWidgetItem>
 #include <QtConcurrent>
 #include <QtSql>
-#include "threading.h"
+//#include "threading.h"
 #include "catalogue.h"
 #include "basictools.h"
 
@@ -24,7 +24,7 @@ public:
     void sqlerr(QString, QSqlError);
     void logger(QString&);
     void insert_csv(QString&, QString&);
-    void insert_table(QString&, QString&);
+    void insert_tables(QVector<QString>&, QString&);
 
 signals:
     void begin_working();
@@ -40,6 +40,8 @@ private slots:
 
     void on_pB_insert_clicked();
 
+    void on_pB_test_clicked();
+
 private:
     Ui::MainWindow *ui;
     std::wstring wdrive;
@@ -54,7 +56,7 @@ private:
     void populate_table(int);
     void clear_log();
     QString read_csv(CATALOGUE&, int);
-    vector<CATALOGUE> binder;
+    std::vector<CATALOGUE> binder;
 };
 
 #endif // MAINWINDOW_H

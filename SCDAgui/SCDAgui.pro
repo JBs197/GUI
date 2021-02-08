@@ -13,18 +13,13 @@ SOURCES += \
     catalogue.cpp \
     csv.cpp \
     main.cpp \
-    mainwindow.cpp \
-    row.cpp \
-    threading.cpp
+    mainwindow.cpp
 
 HEADERS += \
-    asyncfuture.h \
     basictools.h \
     catalogue.h \
     csv.h \
-    mainwindow.h \
-    row.h \
-    threading.h
+    mainwindow.h
 
 FORMS += \
     mainwindow.ui

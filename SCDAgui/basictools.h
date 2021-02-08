@@ -44,6 +44,7 @@ void log8(string);
 // were present at the string's start, indicating the string is a subheading or subsubheading.
 // Mode 0 = identifier wstring, mode 1 = value wstring
 int clean(wstring&, int);
+int qclean(QString&, int);
 
 // Read into memory a local file.
 wstring bin_memory(HANDLE&);
@@ -67,5 +68,9 @@ vector<wstring> get_file_path_endings(wstring, size_t);
 // Given a root folder path, return a vector containing the full paths of all subfolders within.
 vector<wstring> get_subfolders(wstring);
 vector<vector<wstring>> get_subfolders2(wstring);
+
+// Search a given vector for a particular value, and return the index. If not found, insert and return.
+// Returns negative (error) if a new entry fails to match and is not the largest entry.
+int index_card(vector<int>&, int);
 
 #endif

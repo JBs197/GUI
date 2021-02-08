@@ -3,10 +3,11 @@
 
 #include <windows.h>
 #include <QtSql>
-#include "basictools.h"
+#include "csv.h"
 
 class CATALOGUE
 {
+    CSV model;
     QString qpath;
     std::wstring wpath;
     QString qname;
@@ -15,28 +16,19 @@ class CATALOGUE
     wstring wname;
     QString qdescription;
     wstring wfile;
-    int GID = -1;
+    QString qfile;
     wstring csv_trunk;
     vector<wstring> csv_branches;
-    vector<wstring> csv_rows;
-    vector<bool> is_int; // Its length is equal to the number of columns.
-    vector<int> int_val; // All the integer values of the column, in order.
-    vector<double> double_val; // All the decimal values of the column, in order.
-    vector<vector<wstring>> variables;  // Form [variable][variable type, variable shown in CSV]
-    vector<wstring> columns; // Descriptor title for each value in the 1D CSV row.
-    int model_CSV(wstring&);
-    void linearize_tree(wstring&, wstring);
-    void add_branch(QVector<QObject*>&, QObject*, QString);
+
 
 public:
     explicit CATALOGUE() {}
     ~CATALOGUE() {}
     void set_path(QString&);
     void initialize_table();
-    QString get_create_table_statement();
     void make_name_tree();
     wstring get_csv_path(int);
-    QString get_insert_csv_statement(wstring&);
+    QVector<QString> get_create_table_statements();
 };
 
 #endif // CATALOGUE_H
