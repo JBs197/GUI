@@ -34,7 +34,9 @@ private:
     void extract_row_values(int&, QVector<QString>&, QVector<int>&);
     void organize_subtables(int);
     QString subqname_gen();
-    int tree_walker(QVector<QVector<QVector<int>>>&, int);
+    int tree_walker(QVector<QVector<QVector<int>>>&);
+    int is_parent(QVector<QVector<QVector<int>>>&, QVector<int>, int, int);
+    void create_subtable_statement(QVector<QString>&, QVector<QVector<int>>&);
 
 };
 

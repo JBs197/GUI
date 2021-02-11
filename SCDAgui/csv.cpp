@@ -7,7 +7,6 @@ void CSV::initialize(QString& qf, QString& qn)
 {
     qfile = qf;
     qname = qn;
-    subqname = "000000";
 }
 
 // For a given CSV string, extract all desired data. Automatically performs 'initialize' as well.
@@ -15,7 +14,6 @@ void CSV::scan(QString& qf, QString& qn)
 {
     qfile = qf;
     qname = qn;
-    subqname = "000000";
     int pos0 = extract_variables();
     int pos1 = extract_column_titles(pos0);
     extract_rows(pos1);
@@ -36,42 +34,60 @@ QString CSV::subqname_gen()
     return name;
 }
 
-// Find all possible trees for a given parent row. Children have uniform indentation.
-// Form [possibility index][parent, middle objects...][children]
-int CSV::tree_walker(QVector<QVector<QVector<int>>>& tree, int parent)
+// Find all possible subtrees for this CSV. Children have uniform indentation. Returns the number of subtrees.
+// Form [possibility index][parent genealogy, children][list of parents / list of siblings]
+int CSV::tree_walker(QVector<QVector<QVector<int>>>& tree)
 {
-    tree.clear();
-    int indentation = indent[parent];
-    int subtable_index, max_indent, num1, num2;
-    QVector<QVector<int>> children;  // Form [generations from parent][children of ACTIVE row]
-    max_indent = subtables.size() - 1;
-    for (int ii = 0; ii < subtables[indentation].size(); ii++)
+    int indentation = 0;
+    int start_index = 0;
+    QVector<int> genealogy;
+
+    for (int ii = 0; ii < subtables[0].size(); ii++)  // For every parentless parent...
     {
-        num1 = subtables[indentation][ii][0];
-        if (num1 == parent)
-        {
-            subtable_index = ii;
-            children.append(subtables[indentation][ii]);
-            children.removeFirst();
-            while (indentation < max_indent)
-            {
-                indentation++;
-                for (int jj = 0;)  // RESUME HERE
-            }
-            break;
-        }
-        else if (num1 > parent)
-        {
-            return 1;  // This row is not a parent.
-        }
-        else if (ii == subtables[indentation].size() - 1)
-        {
-            return 1;
-        }
+        genealogy = { subtables[0][ii][0] };
+        start_index = is_parent(tree, genealogy, indentation, start_index);
     }
 
+    return tree.size();
+}
 
-    return 0;
+// Recursively determine if the given row is a parent. If so, add it to the tree and do the same for all
+// its children. Returns first yet-to-be checked index in the current indentation's subtable list.
+int CSV::is_parent(QVector<QVector<QVector<int>>>& tree, QVector<int> genealogy, int indentation, int start_index)
+{
+    int row = genealogy[genealogy.size() - 1];  // Current candidate for parenthood.
+    QVector<int> new_genealogy;
+    int new_start_index = 0;
+    int num_children, current_pos;
+    for (int ii = start_index; ii < subtables[indentation].size(); ii++)  // For all parents at this indentation...
+    {
+        if (row == subtables[indentation][ii][0])  // ...if the candidate is a parent...
+        {
+            tree.append(QVector<QVector<int>>(2));  // ... give the candidate its own possibility branch in the tree.
+            current_pos = tree.size() - 1;
+            tree[current_pos][0] = genealogy;
+            tree[current_pos][1] = subtables[indentation][ii];
+            tree[current_pos][1].removeFirst();
+
+            if (indentation < subtables.size() - 1)  // ... and if not currently examining the final generation...
+            {
+                num_children = tree[current_pos][1].size();
+                for (int jj = 0; jj < num_children; jj++)  // ... then repeat the process with the candidate's children.
+                {
+                    new_genealogy = genealogy;
+                    new_genealogy.append(tree[current_pos][1][jj]);
+                    new_start_index = is_parent(tree, new_genealogy, indentation + 1, new_start_index);  // ...
+                }
+            }
+
+            return ii + 1;
+        }
+        else if (row < subtables[indentation][ii][0])
+        {
+            return ii;
+        }
+    }
+    return subtables[indentation].size();
 }
 
 // Populate the CSV object with the CSV file's text variables.
@@ -411,11 +427,53 @@ int CSV::create_all_table_statements(QVector<QString>& work)
     work.append(sql);
 
     // And now we go nuts...
-    QString sub_tname = "T" + qname + "$" + subqname_gen();
-    QVector<QVector<QVector<int>>> tree_paths; // Form [path possibility][trunk, branches...][leaves]
-
-
+    QVector<QVector<QVector<int>>> tree; // Form [path possibility][genealogy][leaves]
+    int subtrees = tree_walker(tree);
+    for (int ii = 0; ii < subtrees; ii++)
+    {
+        create_subtable_statement(work, tree[ii]);
+    }
 
     return 0;
 }
 
+void CSV::create_subtable_statement(QVector<QString>& work, QVector<QVector<int>>& subtree)
+{
+    QString sub_tname = "T" + qname + "$" + subqname_gen();
+    QVector<QVector<QString>> subtable_text_variables = text_variables;
+    int new_subtable_vars = subtree[0].size();
+    QString new_var;
+    for (int ii = 0; ii < new_subtable_vars; ii++)
+    {
+        new_var = "Subtable-" + QString::number(ii);
+        subtable_text_variables.append({ new_var });
+    }
+
+    int is_int_index;
+    QVector<int> is_int_vals;
+    int new_subtable_vals = subtree[1].size();
+    for (int ii = 0; ii < new_subtable_vals; ii++)
+    {
+        is_int_index = map_isint.value(subtree[1][ii]);
+        is_int_vals.append(is_int[is_int_index][1]);
+
+    }
+
+    QString sql = "CREATE TABLE IF NOT EXISTS \"T" + sub_tname + "\" ( ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += subtable_text_variables[ii][0];
+        sql += "\" TEXT, ";
+    }
+
+    for (int ii = 0; ii < new_subtable_vals; ii++)
+    {
+        sql += "\"";
+        sql += row_titles[subtree[1][ii]];
+        if (is_int_vals[ii] == 1) { sql += "\" INTEGER, "; }
+        else if (is_int_vals[ii] == 0) { sql += "\" REAL, "; }
+        else { err8("Missing is_int values-csv.create_subtable_statement"); }
+    }
+    // RESUME HERE
+}
