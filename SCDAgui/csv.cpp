@@ -2,14 +2,7 @@
 
 using namespace std;
 
-// Function to setup the CSV object, in case 'scan' is overkill.
-void CSV::initialize(QString& qf, QString& qn)
-{
-    qfile = qf;
-    qname = qn;
-}
-
-// For a given CSV string, extract all desired data. Automatically performs 'initialize' as well.
+// For a given CSV string, extract all data desired by the model.
 void CSV::scan(QString& qf, QString& qn)
 {
     qfile = qf;
@@ -18,7 +11,11 @@ void CSV::scan(QString& qf, QString& qn)
     int pos1 = extract_column_titles(pos0);
     extract_rows(pos1);
     organize_subtables(pos1);
+}
 
+void CSV::set_gid(QString& gd)
+{
+    gid = gd;
 }
 
 // Generate the next unique name extension for a subtable.
@@ -35,8 +32,8 @@ QString CSV::subqname_gen()
 }
 
 // Find all possible subtrees for this CSV. Children have uniform indentation. Returns the number of subtrees.
-// Form [possibility index][parent genealogy, children][list of parents / list of siblings]
-int CSV::tree_walker(QVector<QVector<QVector<int>>>& tree)
+// Form [possibility index][parent genealogy, children][list of parents / list of children]
+void CSV::tree_walker()
 {
     int indentation = 0;
     int start_index = 0;
@@ -47,8 +44,15 @@ int CSV::tree_walker(QVector<QVector<QVector<int>>>& tree)
         genealogy = { subtables[0][ii][0] };
         start_index = is_parent(tree, genealogy, indentation, start_index);
     }
+}
 
-    return tree.size();
+QVector<QString> CSV::get_subtable_names()
+{
+    return sub_tname_list;
+}
+QVector<QVector<QString>> CSV::get_subtable_text_variables()
+{
+    return subtable_text_variables;
 }
 
 // Recursively determine if the given row is a parent. If so, add it to the tree and do the same for all
@@ -402,10 +406,11 @@ void CSV::organize_subtables(int pos0)
 
 // Generate a list of SQL statements to create the main table and all subtables for this catalogue.
 // The main table is always the first list element, and the returned integer is the number of tables made.
-int CSV::create_all_table_statements(QVector<QString>& work)
+int CSV::create_table_all_statements(QVector<QString>& work)
 {
     // Make the main table first...
     int row;
+    int count = 0;
     QString sql = "CREATE TABLE IF NOT EXISTS \"T" + qname + "\" ( GID INTEGER PRIMARY KEY, ";
     for (int ii = 0; ii < text_variables.size(); ii++)
     {
@@ -425,28 +430,32 @@ int CSV::create_all_table_statements(QVector<QString>& work)
     sql.remove(sql.size() - 2, 2);
     sql.append(" );");
     work.append(sql);
+    count++;
 
     // And now we go nuts...
-    QVector<QVector<QVector<int>>> tree; // Form [path possibility][genealogy][leaves]
-    int subtrees = tree_walker(tree);
+    int subtrees = tree.size();
     for (int ii = 0; ii < subtrees; ii++)
     {
         create_subtable_statement(work, tree[ii]);
+        count++;
     }
 
-    return 0;
+    return count;
 }
 
+// Build a SQL statement to create a subtable for this CSV. Append it to the list.
 void CSV::create_subtable_statement(QVector<QString>& work, QVector<QVector<int>>& subtree)
 {
     QString sub_tname = "T" + qname + "$" + subqname_gen();
-    QVector<QVector<QString>> subtable_text_variables = text_variables;
+    sub_tname_list.append(sub_tname);
     int new_subtable_vars = subtree[0].size();
     QString new_var;
+    QString new_val;
     for (int ii = 0; ii < new_subtable_vars; ii++)
     {
         new_var = "Subtable-" + QString::number(ii);
-        subtable_text_variables.append({ new_var });
+        new_val = row_titles[subtree[0][ii]];
+        subtable_text_variables.append({ new_var, new_val });
     }
 
     int is_int_index;
@@ -456,11 +465,16 @@ void CSV::create_subtable_statement(QVector<QString>& work, QVector<QVector<int>
     {
         is_int_index = map_isint.value(subtree[1][ii]);
         is_int_vals.append(is_int[is_int_index][1]);
-
     }
 
-    QString sql = "CREATE TABLE IF NOT EXISTS \"T" + sub_tname + "\" ( ";
+    QString sql = "CREATE TABLE IF NOT EXISTS \"" + sub_tname + "\" ( ";
     for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][0];
+        sql += "\" TEXT, ";
+    }
+    for (int ii = 0; ii < subtable_text_variables.size(); ii++)
     {
         sql += "\"";
         sql += subtable_text_variables[ii][0];
@@ -475,5 +489,133 @@ void CSV::create_subtable_statement(QVector<QString>& work, QVector<QVector<int>
         else if (is_int_vals[ii] == 0) { sql += "\" REAL, "; }
         else { err8("Missing is_int values-csv.create_subtable_statement"); }
     }
-    // RESUME HERE
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" );");
+    work.append(sql);
+}
+
+QVector<int> CSV::insert_value_all_statements(QVector<QString>& work, QVector<QVector<QVector<int>>>& model_tree, QVector<QString>& subtable_names, QVector<QVector<QString>>& subtable_text_variables)
+{
+    QVector<QVector<int>> int_double_results;
+    QVector<int> int_double_subtable_results;
+    // Do the main table first...
+    int row, sindex;
+    int icount = 0;
+    int dcount = 0;
+    QString sql = "INSERT INTO \"T" + qname + "\" ( GID, ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][0];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < is_int.size(); ii++)
+    {
+        row = is_int[ii][0];
+        sql += "\"";
+        sql += row_titles[row];
+        sql += "\", ";
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql += " ) VALUES ( ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][1];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < is_int.size(); ii++)
+    {
+        sindex = is_int[ii][2];
+        sql += "\"";
+        sql += row_values[sindex];
+        sql += "\", ";
+
+        if (is_int[ii][1] == 1) { icount++; }
+        else if (is_int[ii][1] == 0) { dcount++; }
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" );");
+    work.append(sql);
+    int_double_results.append({ icount, dcount });
+
+    // Add INSERT statements for all subtables in this CSV.
+    int subtrees = model_tree.size();
+    for (int ii = 0; ii < subtrees; ii++)
+    {
+        int_double_subtable_results = insert_subtable_statement(work, model_tree[ii], subtable_names, subtable_text_variables);
+        int_double_results.append(int_double_subtable_results);
+    }
+
+    // Consistency check.
+    icount = int_double_results[0][0];
+    dcount = int_double_results[0][1];
+    for (int ii = 1; ii < int_double_results.size(); ii++)
+    {
+        if (int_double_results[ii][0] != icount)
+        {
+            err8("Inconsistent integer value counts for cata " + qname.toStdString() + ", GID " + gid.toStdString());
+        }
+        else if (int_double_results[ii][1] != dcount)
+        {
+            err8("Inconsistent double value counts for cata " + qname.toStdString() + ", GID " + gid.toStdString());
+        }
+    }
+
+    return int_double_results[0];
+}
+
+QVector<int> CSV::insert_subtable_statement(QVector<QString>& work, QVector<QVector<int>>& model_subtree, QVector<QString>& subtable_names, QVector<QVector<QString>>& subtable_text_variables)
+{
+    int tree_index = work.size() - 1;
+    int isint_index;
+    int subtable_size = subtable_text_variables.size();
+    int icount = 0;
+    int dcount = 0;
+
+    QString sql = "INSERT INTO \"" + subtable_names[tree_index] + "\" ( ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][0];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < subtable_size; ii++)
+    {
+        sql += "\"";
+        sql += subtable_text_variables[ii][0];
+        sql += "\", ";
+    }
+    int num_val_rows = model_subtree[1].size();
+    for (int ii = 0; ii < num_val_rows; ii++)
+    {
+        sql += "\"";
+        sql += row_titles[model_subtree[1][ii]];
+        sql += "\", ";
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" ) VALUES ( ");
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][1];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < subtable_size; ii++)
+    {
+        sql += "\"";
+        sql += subtable_text_variables[ii][1];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < num_val_rows; ii++)
+    {
+        sql += "\"";
+        sql += map_values.value(model_subtree[1][ii]);
+        sql += "\", ";
+        isint_index = map_isint.value(model_subtree[1][ii]);
+        if (is_int[isint_index][1] == 1)  // RESUME HERE, UPDATE i/d counter
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" );");
+    work.append(sql);
 }

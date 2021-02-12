@@ -53,6 +53,9 @@ void CATALOGUE::initialize_table()
     qdescription = temp1;
 
     model.scan(qfile, qname);  // This will populate the embedded CSV object.
+    model.tree_walker();
+    model_subtable_names = model.get_subtable_names();
+    model_subtable_text_variables = model.get_subtable_text_variables();
 
     if (!FindClose(hfile1)) { warn(L"FindClose-cata.initialize_table"); }
     if (!CloseHandle(hfile2)) { warn(L"CloseHandle-cata.initialize_table"); }
@@ -66,9 +69,9 @@ void CATALOGUE::make_name_tree()
 }
 
 // Load the unique portion of each CSV file name into a vector.
-wstring CATALOGUE::get_csv_path(int index)
+wstring CATALOGUE::get_csv_path(int csv_index)
 {
-    wstring csv_path = csv_trunk + csv_branches[index];
+    wstring csv_path = csv_trunk + csv_branches[csv_index];
     return csv_path;
 }
 
@@ -76,7 +79,34 @@ wstring CATALOGUE::get_csv_path(int index)
 QVector<QString> CATALOGUE::get_create_table_statements()
 {
     QVector<QString> work;
-    int table_count = model.create_all_table_statements(work);
-    log8(work[0].toStdString());
+    int table_count = model.create_table_all_statements(work);
+    QString tc;
+    qlog(tname + " had " + tc.setNum(table_count) + " tables created.");
     return work;
+}
+
+// Return a list of SQL statements to insert the row values for each table/subtable in one given CSV.
+QVector<QString> CATALOGUE::get_CSV_insert_value_statements(int csv_index)
+{
+    QVector<QString> work;
+    wstring csv_path = get_csv_path(csv_index);
+    size_t wpos1 = csv_path.find(L'(');
+    size_t wpos2 = csv_path.find(L')', wpos1);
+    wstring wtemp = csv_path.substr(wpos1 + 1, wpos2 - wpos1 - 1);
+    QString gid = QString::fromStdWString(wtemp);
+    bool yesno;
+    gid.toUInt(&yesno);
+    if (!yesno) { err8("gid.toUInt-cata.get_CSV_insert_value_statements");
+    HANDLE hfile = CreateFileW(csv_path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-cata.get_CSV_insert_value_statements"); }
+    QString qfile = q_memory(hfile);
+    int pos1 = qfile.lastIndexOf("Catalogue Number ", qfile.size() - 4);
+    pos1 += 17;
+    int pos2 = qfile.indexOf('.', pos1);
+    QString cata_name = qfile.mid(pos1, pos2 - pos1);
+    CSV page;
+    page.scan(qfile, cata_name);
+    page.import_model(model);
+    page.insert_value_all_statements(work)
+
 }

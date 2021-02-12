@@ -52,8 +52,8 @@ private:
     void build_tree(QVector<QVector<QString>>&);
     void add_children(QTreeWidgetItem*, QVector<QString>&);
     void executor(QString&, QSqlError&);
-    int build_table(QString&);
-    void populate_table(int);
+    int build_cata_tables(QString&);
+    void populate_cata_tables(int);
     void clear_log();
     QString read_csv(CATALOGUE&, int);
     std::vector<CATALOGUE> binder;

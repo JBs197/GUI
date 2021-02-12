@@ -112,7 +112,7 @@ void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
 
 // Creates a catalogue object with all the column headers, then inserts it into the database.
 // Returns the index of the catalogue object in Mainwindow's binder.
-int MainWindow::build_table(QString& qpath)
+int MainWindow::build_cata_tables(QString& qpath)
 {
     CATALOGUE cata;
     cata.set_path(qpath);
@@ -126,7 +126,7 @@ int MainWindow::build_table(QString& qpath)
 }
 
 // (MULTITHREADED) Reads all CSV files for the given catalogue index, and inserts the values into the db as rows.
-void MainWindow::populate_table(int cata_index)
+void MainWindow::populate_cata_tables(int cata_index)
 {
     // DO read_csv per thread !
 }
@@ -245,6 +245,6 @@ void MainWindow::on_pB_test_clicked()
     QString qyear = catas_to_do[0]->text(0);
     QString qcata = catas_to_do[0]->text(1);
     QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
-    int cata_index = build_table(cata_path);
-
+    int cata_index = build_cata_tables(cata_path);  // Returns the index in 'binder'.
+    populate_cata_tables(cata_index);
 }

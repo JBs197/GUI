@@ -39,6 +39,7 @@ void winwarn(wstring);
 // Make an entry into the process log, for the most recent runtime.
 void log(wstring);
 void log8(string);
+void qlog(QString);
 
 // Remove string chars which cause problems with SQL formatting. Returns the number of blank spaces which
 // were present at the string's start, indicating the string is a subheading or subsubheading.
