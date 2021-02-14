@@ -51,6 +51,25 @@ string timestamperA()
     return timestampA;
 }
 
+// Determine the type of number contained within the given string. 0 = error, 1 = int, 2 = double.
+int qnum_test(QString num)
+{
+    bool fine;
+    num.toInt(&fine);
+    if (fine) { return 1; }
+    num.toDouble(&fine);
+    if (fine) { return 2; }
+    return 0;
+}
+
+// Return a piece of the original vector, defined by the first and last positions.
+QVector<QString> string_vector_slicer(QVector<QString>& bushy, int bot, int top)
+{
+    QVector<QString> trim(top - bot + 1);
+    copy(bushy.begin() + bot, bushy.begin() + top + 1, trim.begin());
+    return trim;
+}
+
 // Make an entry into the error log. If severe, terminate the application.
 void err(wstring func)
 {
@@ -422,6 +441,39 @@ wstring w_memory(wstring& full_path)
     return wfile;
 }
 
+// Given a full path name and a string, print that string to file (UTF-8 encoding).
+void sprinter(string full_path, string& content)
+{
+    HANDLE hfile = CreateFileA(full_path.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, CREATE_ALWAYS, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-sprinter"); }
+    DWORD bytes_written;
+    DWORD file_size = (DWORD)content.size();
+    if (!WriteFile(hfile, content.c_str(), file_size, &bytes_written, NULL)) { winerr(L"WriteFile-sprinter"); }
+    if (!CloseHandle(hfile)) { winerr(L"CloseHandle-sprinter"); }
+}
+void wprinter(wstring full_path, wstring& content)
+{
+    string path8 = utf16to8(full_path);
+    string content8 = utf16to8(content);
+    HANDLE hfile = CreateFileA(path8.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, CREATE_ALWAYS, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-wprinter"); }
+    DWORD bytes_written;
+    DWORD file_size = (DWORD)content8.size();
+    if (!WriteFile(hfile, content8.c_str(), file_size, &bytes_written, NULL)) { winerr(L"WriteFile-wprinter"); }
+    if (!CloseHandle(hfile)) { winerr(L"CloseHandle-wprinter"); }
+}
+void qprinter(QString full_path, QString& content)
+{
+    string path8 = full_path.toStdString();
+    string content8 = content.toStdString();
+    HANDLE hfile = CreateFileA(path8.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, CREATE_ALWAYS, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-qprinter"); }
+    DWORD bytes_written;
+    DWORD file_size = (DWORD)content8.size();
+    if (!WriteFile(hfile, content8.c_str(), file_size, &bytes_written, NULL)) { winerr(L"WriteFile-qprinter"); }
+    if (!CloseHandle(hfile)) { winerr(L"CloseHandle-qprinter"); }
+}
+
 // Given a full path name, delete the file/folder.
 void delete_file(wstring filename)
 {
@@ -668,7 +720,7 @@ vector<wstring> get_file_path_endings(wstring folder_path, size_t pos0)
     do
     {
         attributes = info.dwFileAttributes;
-        if (attributes == FILE_ATTRIBUTE_NORMAL)
+        if (attributes == FILE_ATTRIBUTE_NORMAL || attributes == FILE_ATTRIBUTE_ARCHIVE)
         {
             temp1 = folder_path + L"\\" + info.cFileName;
             file_path = temp1.substr(pos0);

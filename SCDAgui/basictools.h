@@ -26,6 +26,12 @@ wstring utf8to16(string);
 // Return a timestamp from the system clock.
 string timestamperA();
 
+// Determine the type of number contained within the given string. 0 = error, 1 = int, 2 = double.
+int qnum_test(QString);
+
+// Return a piece of the original vector, defined by the first and last positions.
+QVector<QString> string_vector_slicer(QVector<QString>&, int, int);
+
 // Make an entry into the error log. If severe, terminate the application.
 void err(wstring);
 void err8(string);
@@ -51,6 +57,11 @@ int qclean(QString&, int);
 wstring bin_memory(HANDLE&);
 QString q_memory(HANDLE&);
 wstring w_memory(wstring&);
+
+// Given a full path name and a string, print that string to file (UTF-8 encoding).
+void sprinter(string, string&);
+void wprinter(wstring, wstring&);
+void qprinter(QString, QString&);
 
 // Given a full path name, delete the file/folder.
 void delete_file(wstring);

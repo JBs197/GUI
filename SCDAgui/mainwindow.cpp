@@ -24,12 +24,43 @@ MainWindow::~MainWindow()
 }
 
 // Threadsafe error log function specific to SQL errors.
+QString MainWindow::sqlerr_enum(QSqlError::ErrorType type)
+{
+    QString qtype;
+    switch (type)
+    {
+    case 0:
+        qtype = "NoError";
+        break;
+
+    case 1:
+        qtype = "ConnectionError";
+        break;
+
+    case 2:
+        qtype = "StatementError";
+        break;
+
+    case 3:
+        qtype = "TransactionError";
+        break;
+
+    case 4:
+        qtype = "UnknownError";
+        break;
+    }
+    return qtype;
+}
+
 void MainWindow::sqlerr(QString qfunc, QSqlError qerror)
 {
     string func8 = qfunc.toStdString();
     string name = utf16to8(root_directory) + "\\SCDA Error Log.txt";
     QString qmessage = qerror.text();
-    string message = timestamperA() + " SQL error inside " + func8 + "\r\n" + qmessage.toStdString() + "\r\n";
+    QString qcode = qerror.nativeErrorCode();
+    QSqlError::ErrorType et = qerror.type();
+    QString qtype = sqlerr_enum(et);
+    string message = timestamperA() + " SQL ERROR: type " + qtype.toStdString() + ", #" + qcode.toStdString() + ", inside " + func8 + "\r\n" + qmessage.toStdString() + "\r\n";
     m_err.lock();
     HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hprinter == INVALID_HANDLE_VALUE) { qDebug() << "CreateFileA error, in sqlerr, from " << qfunc << ". " << qerror.text(); }
@@ -49,7 +80,7 @@ void MainWindow::sqlerr(QString qfunc, QSqlError qerror)
 }
 
 // Threadsafe logger function for the most recent program runtime.
-void MainWindow::logger(QString& qnote)
+void MainWindow::logger(QString qnote)
 {
     string note8 = qnote.toStdString();
     string name = utf16to8(root_directory) + "\\SCDA Process Log.txt";
@@ -81,7 +112,7 @@ void MainWindow::feedback()
     qDebug() << "Report returned from thread: ";
 }
 
-void MainWindow::build_tree(QVector<QVector<QString>>& qtree)
+void MainWindow::build_ui_tree(QVector<QVector<QString>>& qtree)
 {
     QVector<QTreeWidgetItem*> qroots;
     QTreeWidgetItem *item;
@@ -110,15 +141,17 @@ void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
     parent->addChildren(branch);
 }
 
-// Creates a catalogue object with all the column headers, then inserts it into the database.
-// Returns the index of the catalogue object in Mainwindow's binder.
+// (MULTITHREAD HANDLER) Creates a catalogue object with all the column headers, then inserts
+// it into the database. Returns the index of the catalogue object in Mainwindow's binder.
 int MainWindow::build_cata_tables(QString& qpath)
 {
     CATALOGUE cata;
     cata.set_path(qpath);
     cata.initialize_table();
-    QVector<QString> stmts = cata.get_create_table_statements();
-    insert_tables(stmts, qpath);
+    QVector<QString> stmts = cata.get_create_table_statements(cores);
+    qprinter("F:/stmt0.txt", stmts[0]);
+    qprinter("F:/stmt1.txt", stmts[1]);
+    insert_tables(stmts, cata.get_qname());
     cata.make_name_tree();
     int index = (int)binder.size();
     binder.push_back(cata);
@@ -128,7 +161,13 @@ int MainWindow::build_cata_tables(QString& qpath)
 // (MULTITHREADED) Reads all CSV files for the given catalogue index, and inserts the values into the db as rows.
 void MainWindow::populate_cata_tables(int cata_index)
 {
-    // DO read_csv per thread !
+    QVector<QString> stmts = binder[cata_index].get_CSV_insert_value_statements(0);  // HARDCODED for first CSV only.
+    QString csv_branch;
+    for (int ii = 0; ii < stmts.size(); ii++)
+    {
+        csv_branch = binder[cata_index].get_csv_branch(0);
+        insert_csv(stmts[ii], csv_branch);
+    }
 }
 
 // (SINGLETHREADED) Workhorse function to read a local CSV file and convert it into a SQL statement.
@@ -141,49 +180,45 @@ QString MainWindow::read_csv(CATALOGUE& cata, int csv_index)
 }
 
 // (MULTITHREADED) Insert a list of new tables/subtables into the database.
-void MainWindow::insert_tables(QVector<QString>& stmts, QString& folder_path)
+void MainWindow::insert_tables(QVector<QString>& stmts, QString qname)
 {
-    QSqlError qerror;
     for (int ii = 0; ii < stmts.size(); ii++)
     {
         m_executor.lockForWrite();
-        executor(stmts[ii], qerror);
+        QSqlError qerror = executor(stmts[ii]);
         m_executor.unlock();
         if (qerror.isValid())
         {
-            sqlerr("insert_table in " + folder_path, qerror);
+            sqlerr("mainwindow.insert_tables for " + qname, qerror);
         }
     }
-    string spath = folder_path.toStdString();
-    size_t pos = spath.rfind("\\");
-    string sname = spath.substr(pos + 1);
-    log8(sname + " was inserted into the database.");
+    logger(qname + " was inserted into the database.");
 }
 
-void MainWindow::insert_csv(QString& stmt, QString& file_path)
+void MainWindow::insert_csv(QString& stmt, QString& csv_branch)
 {
-    QSqlError qerror;
     m_executor.lockForWrite();
-    executor(stmt, qerror);
+    QSqlError qerror = executor(stmt);
     m_executor.unlock();
     if (qerror.isValid())
     {
-        sqlerr("insert_csv in " + file_path, qerror);
+        sqlerr("mainwindow.insert_csv in " + csv_branch, qerror);
     }
-    string spath = file_path.toStdString();
-    size_t pos = spath.rfind("\\");
-    string sname = spath.substr(pos + 1);
-    log8(sname + " was inserted into the database.");
+    logger(csv_branch + " was inserted into the database.");
 }
 
-void MainWindow::executor(QString& stmt, QSqlError& qerror)
+QSqlError MainWindow::executor(QString& stmt)
 {
     QSqlQuery query(db);
     query.prepare(stmt);
-    if (!query.exec())
+    QSqlError qerror1 = query.lastError();
+    if (qerror1.isValid())
     {
-        qerror = query.lastError();
+        return qerror1;
     }
+    query.exec();
+    QSqlError qerror2 = query.lastError();
+    return qerror2;
 }
 
 void MainWindow::on_cB_drives_currentTextChanged(const QString &arg1)
@@ -217,7 +252,7 @@ void MainWindow::on_pB_scan_clicked()
         }
     }
 
-    build_tree(qtree);
+    build_ui_tree(qtree);
 }
 
 void MainWindow::on_pB_insert_clicked()
@@ -226,9 +261,9 @@ void MainWindow::on_pB_insert_clicked()
     QString qyear = catas_to_do[0]->text(0);
     QString qcata = catas_to_do[0]->text(1);
     QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
-    int cata_index = build_table(cata_path);
-    log8(qcata.toStdString() + " was assigned binder index " + to_string(cata_index));
-    populate_table(cata_index);
+    //int cata_index = build_table(cata_path);
+    //log8(qcata.toStdString() + " was assigned binder index " + to_string(cata_index));
+    //populate_table(cata_index);
 
     /*
     qDebug() << "Button was clicked in " << QThread::currentThread();

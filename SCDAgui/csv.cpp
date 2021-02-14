@@ -7,9 +7,12 @@ void CSV::scan(QString& qf, QString& qn)
 {
     qfile = qf;
     qname = qn;
+    unique_row_buffer.append("");
     int pos0 = extract_variables();
     int pos1 = extract_column_titles(pos0);
     extract_rows(pos1);
+    extract_classic_rows(pos1);
+    last_classic_row = row_titles.size() - 1;
     organize_subtables(pos1);
 }
 
@@ -31,7 +34,7 @@ QString CSV::subqname_gen()
     return name;
 }
 
-// Find all possible subtrees for this CSV. Children have uniform indentation. Returns the number of subtrees.
+// Find all possible subtrees for this CSV. Children have uniform indentation.
 // Form [possibility index][parent genealogy, children][list of parents / list of children]
 void CSV::tree_walker()
 {
@@ -46,13 +49,29 @@ void CSV::tree_walker()
     }
 }
 
+// Return a subtable name, given GID and genealogy.
+QString CSV::sublabelmaker(QString& gid, QVector<QVector<int>>& family)
+{
+    QString stname = "T" + qname + "$" + gid;
+    int ancestry = family[0].size();
+    int cheddar = 2;
+    QString temp;
+    for (int ii = 0; ii < ancestry; ii++)
+    {
+        for (int jj = 0; jj < cheddar; jj++)
+        {
+            stname += "$";
+        }
+        cheddar++;
+        temp = QString::number(family[0][ii]);
+        stname += temp;
+    }
+    return stname;
+}
+
 QVector<QString> CSV::get_subtable_names()
 {
     return sub_tname_list;
-}
-QVector<QVector<QString>> CSV::get_subtable_text_variables()
-{
-    return subtable_text_variables;
 }
 
 // Recursively determine if the given row is a parent. If so, add it to the tree and do the same for all
@@ -153,16 +172,6 @@ int CSV::extract_column_titles(int pos0)
         return nl1;  // This was a data line - redo it later.
     }
 
-    /*
-    if (column_titles.size() < 2)
-    {
-        column_titles.clear();
-        column_titles.append("Description");
-        column_titles.append("Value");
-        return nl1;  // This was a data line - redo it later.
-    }
-    */
-
     multi_column = 1;
     return nl2;
 }
@@ -200,6 +209,116 @@ void CSV::extract_rows(int pos0)
         nl1 = nl2;
         nl2 = qfile.indexOf('\n', nl1 + 1);
     } while (nl2 > 0);  // Secondary exit from the loop.
+}
+void CSV::extract_classic_rows(int pos0)
+{
+    vector<int> space_index = { 0 };
+    int indentation = 0;
+    vector<int> family_line = { 0 };
+    size_t pos1, pos2, pos3, nl1, nl2;
+    int spaces, row_index;
+    QString temp1, temp2, val;
+    string exception;
+
+    nl1 = pos0;
+    nl2 = qfile.indexOf('\n', nl1 + 1);
+    do
+    {
+        classic_rows.append(QVector<QString>());
+        row_index = classic_rows.size() - 1;
+        pos1 = qfile.indexOf('"', nl1);
+        pos2 = qfile.indexOf('"', pos1 + 1);
+        temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
+        spaces = qclean(temp1, 0);
+        if (temp1 == "Note") { break; }  // Primary exit from the loop.
+        indentation = index_card(space_index, spaces);
+        if (indentation < 0) { err(L"index_card-csv.extract_classic_rows"); }
+
+        temp2.clear();
+        for (int ii = 0; ii < indentation; ii++)
+        {
+            temp2.push_back('+');
+        }
+        temp2 += temp1;
+        classic_rows[row_index].append(temp2);  // First string is the row title.
+
+        pos2 = qfile.indexOf(',', pos2);
+        do
+        {
+            pos1 = pos2;
+            pos2 = qfile.indexOf(',', pos1 + 1);
+            if (pos2 > nl2)
+            {
+                pos3 = qfile.indexOf(' ', pos1 + 1);
+                if (pos3 > nl2)
+                {
+                    pos3 = qfile.indexOf('\r', pos1 + 1);
+                    if (pos3 > nl2)
+                    {
+                        err8("pos error in extract_classic_rows");
+                    }
+                }
+                temp1 = qfile.mid(pos1 + 1, pos3 - pos1 - 1);
+                classic_rows[row_index].append(temp1);  // All strings after the first are values, in string form.
+            }
+            else
+            {
+                temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
+                classic_rows[row_index].append(temp1);  // All strings after the first are values, in string form.
+            }
+        } while (pos2 < nl2);
+
+        classic_is_int.append(qnum_test(temp1));  // Index is identical to 'classic_rows'.
+
+        nl1 = nl2;
+        nl2 = qfile.indexOf('\n', nl1 + 1);
+    } while (nl2 > 0);  // Secondary exit from the loop.
+}
+
+// For a given row (with values), return a unique row name by front-pushing the child's genealogy.
+// Uses a persistent buffer in the CSV object. Remember to clear it when done!
+QString CSV::unique_row_title(int row)
+{
+    int current_indent = unique_row_buffer.size() - 1;
+    QString terminal = row_titles[row];
+    int new_indent = 0;
+    int pos1 = 0;
+    while (terminal[pos1] == '+')
+    {
+        pos1++;
+        new_indent++;
+    }
+
+    if (new_indent == current_indent)
+    {
+        unique_row_buffer[current_indent] = terminal;
+    }
+    else if (new_indent > current_indent)
+    {
+        unique_row_buffer.append(terminal);
+    }
+    else
+    {
+        pos1 = current_indent - new_indent;
+        unique_row_buffer.remove(unique_row_buffer.size() - pos1, pos1);
+        unique_row_buffer[new_indent] = terminal;
+    }
+
+    QString unique;
+    for (int ii = 0; ii <= new_indent; ii++)
+    {
+        unique += unique_row_buffer[ii];
+        if (ii < new_indent)
+        {
+            unique += " ";
+            for (int jj = 0; jj < ii + 1; jj++)
+            {
+                unique += "$";
+            }
+            unique += " ";
+        }
+    }
+    return unique;
 }
 
 // Convenience function to obtain the value data from a specific line in the CSV file.
@@ -404,13 +523,10 @@ void CSV::organize_subtables(int pos0)
     }
 }
 
-// Generate a list of SQL statements to create the main table and all subtables for this catalogue.
-// The main table is always the first list element, and the returned integer is the number of tables made.
-int CSV::create_table_all_statements(QVector<QString>& work)
+// Build a SQL statement to create the primary table, which encompasses the whole catalogue.
+void CSV::create_table_cata(QVector<QString>& work)
 {
-    // Make the main table first...
     int row;
-    int count = 0;
     QString sql = "CREATE TABLE IF NOT EXISTS \"T" + qname + "\" ( GID INTEGER PRIMARY KEY, ";
     for (int ii = 0; ii < text_variables.size(); ii++)
     {
@@ -422,25 +538,96 @@ int CSV::create_table_all_statements(QVector<QString>& work)
     {
         row = is_int[ii][0];
         sql += "\"";
-        sql += row_titles[row];
+        sql += unique_row_title(row);
         if (is_int[ii][1] == 1) { sql += "\" INTEGER, "; }
         else if (is_int[ii][1] == 0) { sql += "\" REAL, "; }
-        else { err8("Missing is_int values-csv.create_all_table_statements"); }
+        else { err8("Missing is_int values-csv.create_table_cata"); }
     }
     sql.remove(sql.size() - 2, 2);
     sql.append(" );");
     work.append(sql);
-    count++;
+}
 
-    // And now we go nuts...
-    int subtrees = tree.size();
-    for (int ii = 0; ii < subtrees; ii++)
+// Build a list of SQL statements to create all the secondary (CSV) tables for this catalogue.
+void CSV::create_table_csvs(QVector<QString>& work, QVector<QString>& gid_list)
+{
+    QString sql0 = "CREATE TABLE IF NOT EXISTS \"T" + qname;
+    QString sql2 = "\" ( ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
     {
-        create_subtable_statement(work, tree[ii]);
-        count++;
+        sql2 += "\"";
+        sql2 += text_variables[ii][0];
+        sql2 += "\" TEXT, ";
     }
+    if (multi_column)
+    {
+        sql2 += "\"";
+        sql2 += column_titles[0];
+        sql2 += "\" TEXT, ";
+        for (int ii = 1; ii < column_titles.size(); ii++)
+        {
+            sql2 += "\"";
+            sql2 += column_titles[ii];
+            sql2 += "\" NUMERIC, ";
+        }
+    }
+    else
+    {
+        sql2 += "\"Description\" TEXT, ";
+        sql2 += "\"Value\" NUMERIC, ";
+    }
+    sql2.remove(sql2.size() - 2, 2);
+    sql2.append(" );");
 
-    return count;
+    QString sql1;
+    for (int ii = 0; ii < gid_list.size(); ii++)
+    {
+        sql1 = "$";
+        sql1.append(gid_list[ii]);
+        work.append(sql0 + sql1 + sql2);
+    }
+}
+
+// Build a list of SQL statements to create all the subtables for this CSV/catalogue.
+void CSV::create_table_subs(QVector<QString>& work, QVector<QString>& gid_list)
+{
+    QString sql0 = "CREATE TABLE IF NOT EXISTS \"";
+    QString sql2 = "\" ( ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql2 += "\"";
+        sql2 += text_variables[ii][0];
+        sql2 += "\" TEXT, ";
+    }
+    if (multi_column)
+    {
+        sql2 += "\"";
+        sql2 += column_titles[0];
+        sql2 += "\" TEXT, ";
+        for (int ii = 1; ii < column_titles.size(); ii++)
+        {
+            sql2 += "\"";
+            sql2 += column_titles[ii];
+            sql2 += "\" NUMERIC, ";
+        }
+    }
+    else
+    {
+        sql2 += "\"Description\" TEXT, ";
+        sql2 += "\"Value\" NUMERIC, ";
+    }
+    sql2.remove(sql2.size() - 2, 2);
+    sql2.append(" );");
+
+    QString sql1;
+    for (int ii = 0; ii < gid_list.size(); ii++)
+    {
+        for (int jj = 0; jj < tree.size(); jj++)
+        {
+            sql1 = sublabelmaker(gid_list[ii], tree[jj]);
+            work.append(sql0 + sql1 + sql2);
+        }
+    }
 }
 
 // Build a SQL statement to create a subtable for this CSV. Append it to the list.
@@ -451,6 +638,7 @@ void CSV::create_subtable_statement(QVector<QString>& work, QVector<QVector<int>
     int new_subtable_vars = subtree[0].size();
     QString new_var;
     QString new_val;
+    QVector<QVector<QString>> subtable_text_variables;
     for (int ii = 0; ii < new_subtable_vars; ii++)
     {
         new_var = "Subtable-" + QString::number(ii);
@@ -613,9 +801,18 @@ QVector<int> CSV::insert_subtable_statement(QVector<QString>& work, QVector<QVec
         sql += map_values.value(model_subtree[1][ii]);
         sql += "\", ";
         isint_index = map_isint.value(model_subtree[1][ii]);
-        if (is_int[isint_index][1] == 1)  // RESUME HERE, UPDATE i/d counter
+        if (is_int[isint_index][1] == 1)
+        {
+            icount++;
+        }
+        else if (is_int[isint_index][1] == 0)
+        {
+            dcount++;
+        }
     }
     sql.remove(sql.size() - 2, 2);
     sql.append(" );");
     work.append(sql);
+    QVector<int> int_double_result = { icount, dcount };
+    return int_double_result;
 }

@@ -3,9 +3,7 @@
 
 #include <QMainWindow>
 #include <QTreeWidgetItem>
-#include <QtConcurrent>
 #include <QtSql>
-//#include "threading.h"
 #include "catalogue.h"
 #include "basictools.h"
 
@@ -22,9 +20,9 @@ public:
     ~MainWindow();
     QSqlDatabase db;
     void sqlerr(QString, QSqlError);
-    void logger(QString&);
+    void logger(QString);
     void insert_csv(QString&, QString&);
-    void insert_tables(QVector<QString>&, QString&);
+    void insert_tables(QVector<QString>&, QString);
 
 signals:
     void begin_working();
@@ -44,19 +42,21 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
+    int cores = 3;
     std::wstring wdrive;
     QString qdrive;
     QReadWriteLock m_executor;
     QMutex m_err, m_log;
     wstring root_directory = L"F:";  // NOTE: REMOVE HARDCODING LATER
-    void build_tree(QVector<QVector<QString>>&);
+    void build_ui_tree(QVector<QVector<QString>>&);
     void add_children(QTreeWidgetItem*, QVector<QString>&);
-    void executor(QString&, QSqlError&);
+    QSqlError executor(QString&);
     int build_cata_tables(QString&);
     void populate_cata_tables(int);
     void clear_log();
     QString read_csv(CATALOGUE&, int);
     std::vector<CATALOGUE> binder;
+    QString sqlerr_enum(QSqlError::ErrorType);
 };
 
 #endif // MAINWINDOW_H
