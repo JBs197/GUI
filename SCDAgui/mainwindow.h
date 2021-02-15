@@ -25,10 +25,8 @@ public:
     void insert_tables(QVector<QString>&, QString);
 
 signals:
-    void begin_working();
 
 public slots:
-    void feedback();
 
 private slots:
 
@@ -39,6 +37,8 @@ private slots:
     void on_pB_insert_clicked();
 
     void on_pB_test_clicked();
+
+    void on_progressBar_valueChanged(int value);
 
 private:
     Ui::MainWindow *ui;
@@ -51,12 +51,15 @@ private:
     void build_ui_tree(QVector<QVector<QString>>&);
     void add_children(QTreeWidgetItem*, QVector<QString>&);
     QSqlError executor(QString&);
-    int build_cata_tables(QString&);
-    void populate_cata_tables(int);
+    int insert_cata_tables(QString&);
     void clear_log();
-    QString read_csv(CATALOGUE&, int);
     std::vector<CATALOGUE> binder;
     QString sqlerr_enum(QSqlError::ErrorType);
+    void nobles_st(QVector<QVector<QString>>&);
+    void subtables_st(CATALOGUE&);
+    void subtables_mt(CATALOGUE&);
+    void subtables_mapped(CATALOGUE&);
+    void populate_cata_tables(int);
 };
 
 #endif // MAINWINDOW_H

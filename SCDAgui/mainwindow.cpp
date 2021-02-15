@@ -10,6 +10,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->cB_drives->addItem("E:");
     ui->cB_drives->addItem("F:");
     ui->cB_drives->addItem("G:");
+    ui->progressBar->setValue(0);
 
     db = QSqlDatabase::addDatabase("QSQLITE");
     db.setDatabaseName("F:\\SCDA.db");  // NOTE: REMOVE HARDCODING LATER
@@ -51,7 +52,6 @@ QString MainWindow::sqlerr_enum(QSqlError::ErrorType type)
     }
     return qtype;
 }
-
 void MainWindow::sqlerr(QString qfunc, QSqlError qerror)
 {
     string func8 = qfunc.toStdString();
@@ -107,11 +107,6 @@ void MainWindow::clear_log()
     if (!CloseHandle(hprinter)) { warn(L"CloseHandle-refresh_log"); }
 }
 
-void MainWindow::feedback()
-{
-    qDebug() << "Report returned from thread: ";
-}
-
 void MainWindow::build_ui_tree(QVector<QVector<QString>>& qtree)
 {
     QVector<QTreeWidgetItem*> qroots;
@@ -141,45 +136,202 @@ void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
     parent->addChildren(branch);
 }
 
-// (MULTITHREAD HANDLER) Creates a catalogue object with all the column headers, then inserts
-// it into the database. Returns the index of the catalogue object in Mainwindow's binder.
-int MainWindow::build_cata_tables(QString& qpath)
+void MainWindow::populate_cata_tables(int cata_index)
 {
+
+}
+
+int MainWindow::insert_cata_tables(QString& qpath)
+{
+    QElapsedTimer timer;
+    timer.start();
     CATALOGUE cata;
     cata.set_path(qpath);
     cata.initialize_table();
-    QVector<QString> stmts = cata.get_create_table_statements(cores);
-    qprinter("F:/stmt0.txt", stmts[0]);
-    qprinter("F:/stmt1.txt", stmts[1]);
-    insert_tables(stmts, cata.get_qname());
-    cata.make_name_tree();
+    qDebug() << "Initialize cata: " << timer.restart();
+    QVector<QVector<QString>> noble_statements = cata.get_nobles();
+    qDebug() << "Get nobles: " << timer.restart();
+    nobles_st(noble_statements);
+    qDebug() << "Insert nobles: " << timer.restart();
+    subtables_mt(cata);
+    qDebug() << "Insert subtables, MT: " << timer.restart();
+
     int index = (int)binder.size();
     binder.push_back(cata);
     return index;
 }
 
-// (MULTITHREADED) Reads all CSV files for the given catalogue index, and inserts the values into the db as rows.
-void MainWindow::populate_cata_tables(int cata_index)
+void MainWindow::subtables_st(CATALOGUE& cat)
 {
-    QVector<QString> stmts = binder[cata_index].get_CSV_insert_value_statements(0);  // HARDCODED for first CSV only.
-    QString csv_branch;
-    for (int ii = 0; ii < stmts.size(); ii++)
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString stmt, name;
+    int pos1;
+    for (int ii = 0; ii < gid_list.size(); ii++)
     {
-        csv_branch = binder[cata_index].get_csv_branch(0);
-        insert_csv(stmts[ii], csv_branch);
+        for (int jj = 0; jj < tree.size(); jj++)
+        {
+            name = cat.sublabelmaker(gid_list[ii], tree[jj]);
+            stmt = sub_template;
+            pos1 = stmt.indexOf("!!!");
+            stmt.replace(pos1, 3, name);
+
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                sqlerr("mainwindow.subtables_st for " + name, qerror);
+            }
+        }
     }
 }
 
-// (SINGLETHREADED) Workhorse function to read a local CSV file and convert it into a SQL statement.
-QString MainWindow::read_csv(CATALOGUE& cata, int csv_index)
+void MainWindow::subtables_mt(CATALOGUE& cat)
 {
-    wstring csv_path = cata.get_csv_path(csv_index);
-    wstring wfile = w_memory(csv_path);
-    QString aaaa = "aaaaaaa";
-    return aaaa;
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString qname = cat.get_qname();
+
+    auto insert_subtable_gid = [=] (int bot, int top)  // Interval is inclusive.
+    {
+        QString name, stmt, temp;
+        int pos1, ancestry, cheddar;
+        for (int ii = bot; ii <= top; ii++)
+        {
+            for (int jj = 0; jj < tree.size(); jj++)
+            {
+                name = "T" + qname + "$" + gid_list[ii];
+                ancestry = tree[jj][0].size();
+                cheddar = 2;
+                for (int ii = 0; ii < ancestry; ii++)
+                {
+                    for (int jj = 0; jj < cheddar; jj++)
+                    {
+                        name += "$";
+                    }
+                    cheddar++;
+                    temp = QString::number(tree[jj][0][ii]);
+                    name += temp;
+                }
+
+                stmt = sub_template;
+                pos1 = stmt.indexOf("!!!");
+                stmt.replace(pos1, 3, name);
+
+                m_executor.lockForWrite();
+                QSqlError qerror = executor(stmt);
+                m_executor.unlock();
+                if (qerror.isValid())
+                {
+                    sqlerr("mainwindow.subtables_mt for " + name, qerror);
+                }
+            }
+        }
+    };
+
+    QList<QFuture<void>> bag_of_nothing;
+    int workload = gid_list.size() / cores;
+    int bot = 0;
+    int top = workload - 1;
+    for (int ii = 0; ii < cores; ii++)
+    {
+        if (ii < cores - 1)
+        {
+            bag_of_nothing.append(QtConcurrent::task(std::move(insert_subtable_gid))
+                    .withArguments(bot, top)
+                    .spawn() );
+            bot += workload;
+            top += workload;
+        }
+        else
+        {
+            bag_of_nothing.append(QtConcurrent::task(std::move(insert_subtable_gid))
+                    .withArguments(bot, gid_list.size() - 1)
+                    .spawn() );
+        }
+    }
+    QThread::msleep(5);
+    bool jobsdone = 0;
+    int tally;
+    while (!jobsdone)
+    {
+        QThread::msleep(5);
+        tally = 0;
+        for (int ii = 0; ii < cores; ii++)
+        {
+            tally += bag_of_nothing[ii].isFinished();
+        }
+        if (tally >= cores)
+        {
+            jobsdone = 1;
+        }
+    }
 }
 
-// (MULTITHREADED) Insert a list of new tables/subtables into the database.
+void MainWindow::subtables_mapped(CATALOGUE& cat)
+{
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString qname = cat.get_qname();
+
+    auto insert_subtable = [=] (QString gid)
+    {
+        QString name, stmt, temp;
+        int pos1, ancestry, cheddar;
+        for (int jj = 0; jj < tree.size(); jj++)
+        {
+            name = "T" + qname + "$" + gid;
+            ancestry = tree[jj][0].size();
+            cheddar = 2;
+            for (int ii = 0; ii < ancestry; ii++)
+            {
+                for (int jj = 0; jj < cheddar; jj++)
+                {
+                    name += "$";
+                }
+                cheddar++;
+                temp = QString::number(tree[jj][0][ii]);
+                name += temp;
+            }
+
+            stmt = sub_template;
+            pos1 = stmt.indexOf("!!!");
+            stmt.replace(pos1, 3, name);
+
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                sqlerr("mainwindow.subtables_mapped for " + name, qerror);
+            }
+        }
+    };
+
+    QFuture<void> bit_of_nothing = QtConcurrent::map(gid_list, insert_subtable);
+    QThread::msleep(5);
+    bit_of_nothing.waitForFinished();
+}
+
+void MainWindow::nobles_st(QVector<QVector<QString>>& stmts)
+{
+    for (int ii = 0; ii < stmts.size(); ii++)
+    {
+        m_executor.lockForWrite();
+        QSqlError qerror = executor(stmts[ii][0]);
+        m_executor.unlock();
+        if (qerror.isValid())
+        {
+            sqlerr("mainwindow.nobles_st for " + stmts[ii][1], qerror);
+        }
+    }
+    logger(stmts[0][1] + " and CSV nobles were inserted into the database.");
+}
+
 void MainWindow::insert_tables(QVector<QString>& stmts, QString qname)
 {
     for (int ii = 0; ii < stmts.size(); ii++)
@@ -280,6 +432,11 @@ void MainWindow::on_pB_test_clicked()
     QString qyear = catas_to_do[0]->text(0);
     QString qcata = catas_to_do[0]->text(1);
     QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
-    int cata_index = build_cata_tables(cata_path);  // Returns the index in 'binder'.
-    populate_cata_tables(cata_index);
+    int cata_index = insert_cata_tables(cata_path);
+    //populate_cata_tables(cata_index);
+}
+
+void MainWindow::on_progressBar_valueChanged(int value)
+{
+
 }

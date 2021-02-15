@@ -21,19 +21,6 @@ void CSV::set_gid(QString& gd)
     gid = gd;
 }
 
-// Generate the next unique name extension for a subtable.
-QString CSV::subqname_gen()
-{
-    subqname++;
-    QString name = QString::number(subqname);
-    int size = name.size();
-    for (int ii = 0; ii < (6 - size); ii++)
-    {
-        name.push_front('0');
-    }
-    return name;
-}
-
 // Find all possible subtrees for this CSV. Children have uniform indentation.
 // Form [possibility index][parent genealogy, children][list of parents / list of children]
 void CSV::tree_walker()
@@ -69,9 +56,22 @@ QString CSV::sublabelmaker(QString& gid, QVector<QVector<int>>& family)
     return stname;
 }
 
-QVector<QString> CSV::get_subtable_names()
+// Fetch value functions.
+bool CSV::get_multi_column()
 {
-    return sub_tname_list;
+    return multi_column;
+}
+QVector<QString> CSV::get_column_titles()
+{
+    return column_titles;
+}
+QVector<QVector<QString>> CSV::get_text_variables()
+{
+    return text_variables;
+}
+QVector<QVector<QVector<int>>> CSV::get_model_tree()
+{
+    return tree;
 }
 
 // Recursively determine if the given row is a parent. If so, add it to the tree and do the same for all
@@ -524,7 +524,7 @@ void CSV::organize_subtables(int pos0)
 }
 
 // Build a SQL statement to create the primary table, which encompasses the whole catalogue.
-void CSV::create_table_cata(QVector<QString>& work)
+void CSV::create_table_cata(QVector<QVector<QString>>& work)
 {
     int row;
     QString sql = "CREATE TABLE IF NOT EXISTS \"T" + qname + "\" ( GID INTEGER PRIMARY KEY, ";
@@ -545,11 +545,13 @@ void CSV::create_table_cata(QVector<QString>& work)
     }
     sql.remove(sql.size() - 2, 2);
     sql.append(" );");
-    work.append(sql);
+    work.append(QVector<QString>(2));
+    work[work.size() - 1][0] = sql;
+    work[work.size() - 1][1] = "T" + qname;
 }
 
 // Build a list of SQL statements to create all the secondary (CSV) tables for this catalogue.
-void CSV::create_table_csvs(QVector<QString>& work, QVector<QString>& gid_list)
+void CSV::create_table_csvs(QVector<QVector<QString>>& work, QVector<QString>& gid_list)
 {
     QString sql0 = "CREATE TABLE IF NOT EXISTS \"T" + qname;
     QString sql2 = "\" ( ";
@@ -584,102 +586,41 @@ void CSV::create_table_csvs(QVector<QString>& work, QVector<QString>& gid_list)
     {
         sql1 = "$";
         sql1.append(gid_list[ii]);
-        work.append(sql0 + sql1 + sql2);
+        work.append(QVector<QString>(2));
+        work[work.size() - 1][0] = sql0 + sql1 + sql2;
+        work[work.size() - 1][1] = "T" + qname + sql1;
     }
 }
 
-// Build a list of SQL statements to create all the subtables for this CSV/catalogue.
-void CSV::create_table_subs(QVector<QString>& work, QVector<QString>& gid_list)
+// Build a SQL statement to create a subtable, with the table name missing.
+void CSV::create_sub_template(QString& work)
 {
-    QString sql0 = "CREATE TABLE IF NOT EXISTS \"";
-    QString sql2 = "\" ( ";
+    work = "CREATE TABLE IF NOT EXISTS \"!!!\" ( ";
     for (int ii = 0; ii < text_variables.size(); ii++)
     {
-        sql2 += "\"";
-        sql2 += text_variables[ii][0];
-        sql2 += "\" TEXT, ";
+        work += "\"";
+        work += text_variables[ii][0];
+        work += "\" TEXT, ";
     }
     if (multi_column)
     {
-        sql2 += "\"";
-        sql2 += column_titles[0];
-        sql2 += "\" TEXT, ";
+        work += "\"";
+        work += column_titles[0];
+        work += "\" TEXT, ";
         for (int ii = 1; ii < column_titles.size(); ii++)
         {
-            sql2 += "\"";
-            sql2 += column_titles[ii];
-            sql2 += "\" NUMERIC, ";
+            work += "\"";
+            work += column_titles[ii];
+            work += "\" NUMERIC, ";
         }
     }
     else
     {
-        sql2 += "\"Description\" TEXT, ";
-        sql2 += "\"Value\" NUMERIC, ";
+        work += "\"Description\" TEXT, ";
+        work += "\"Value\" NUMERIC, ";
     }
-    sql2.remove(sql2.size() - 2, 2);
-    sql2.append(" );");
-
-    QString sql1;
-    for (int ii = 0; ii < gid_list.size(); ii++)
-    {
-        for (int jj = 0; jj < tree.size(); jj++)
-        {
-            sql1 = sublabelmaker(gid_list[ii], tree[jj]);
-            work.append(sql0 + sql1 + sql2);
-        }
-    }
-}
-
-// Build a SQL statement to create a subtable for this CSV. Append it to the list.
-void CSV::create_subtable_statement(QVector<QString>& work, QVector<QVector<int>>& subtree)
-{
-    QString sub_tname = "T" + qname + "$" + subqname_gen();
-    sub_tname_list.append(sub_tname);
-    int new_subtable_vars = subtree[0].size();
-    QString new_var;
-    QString new_val;
-    QVector<QVector<QString>> subtable_text_variables;
-    for (int ii = 0; ii < new_subtable_vars; ii++)
-    {
-        new_var = "Subtable-" + QString::number(ii);
-        new_val = row_titles[subtree[0][ii]];
-        subtable_text_variables.append({ new_var, new_val });
-    }
-
-    int is_int_index;
-    QVector<int> is_int_vals;
-    int new_subtable_vals = subtree[1].size();
-    for (int ii = 0; ii < new_subtable_vals; ii++)
-    {
-        is_int_index = map_isint.value(subtree[1][ii]);
-        is_int_vals.append(is_int[is_int_index][1]);
-    }
-
-    QString sql = "CREATE TABLE IF NOT EXISTS \"" + sub_tname + "\" ( ";
-    for (int ii = 0; ii < text_variables.size(); ii++)
-    {
-        sql += "\"";
-        sql += text_variables[ii][0];
-        sql += "\" TEXT, ";
-    }
-    for (int ii = 0; ii < subtable_text_variables.size(); ii++)
-    {
-        sql += "\"";
-        sql += subtable_text_variables[ii][0];
-        sql += "\" TEXT, ";
-    }
-
-    for (int ii = 0; ii < new_subtable_vals; ii++)
-    {
-        sql += "\"";
-        sql += row_titles[subtree[1][ii]];
-        if (is_int_vals[ii] == 1) { sql += "\" INTEGER, "; }
-        else if (is_int_vals[ii] == 0) { sql += "\" REAL, "; }
-        else { err8("Missing is_int values-csv.create_subtable_statement"); }
-    }
-    sql.remove(sql.size() - 2, 2);
-    sql.append(" );");
-    work.append(sql);
+    work.remove(work.size() - 2, 2);
+    work.append(" );");
 }
 
 QVector<int> CSV::insert_value_all_statements(QVector<QString>& work, QVector<QVector<QVector<int>>>& model_tree, QVector<QString>& subtable_names, QVector<QVector<QString>>& subtable_text_variables)

@@ -2,6 +2,26 @@
 
 using namespace std;
 
+// Return a subtable name, given GID and genealogy.
+QString CATALOGUE::sublabelmaker(QString& gid, QVector<QVector<int>>& family)
+{
+    QString stname = "T" + qname + "$" + gid;
+    int ancestry = family[0].size();
+    int cheddar = 2;
+    QString temp;
+    for (int ii = 0; ii < ancestry; ii++)
+    {
+        for (int jj = 0; jj < cheddar; jj++)
+        {
+            stname += "$";
+        }
+        cheddar++;
+        temp = QString::number(family[0][ii]);
+        stname += temp;
+    }
+    return stname;
+}
+
 // Load on-disk folder paths for the catalogue folder.
 void CATALOGUE::set_path(QString& cata_path)
 {
@@ -54,8 +74,8 @@ void CATALOGUE::initialize_table()
 
     model.scan(qfile, qname);  // This will populate the embedded CSV object.
     model.tree_walker();
-    model_subtable_names = model.get_subtable_names();
     make_name_tree();
+    model_tree = model.get_model_tree();
 
     if (!FindClose(hfile1)) { warn(L"FindClose-cata.initialize_table"); }
     if (!CloseHandle(hfile2)) { warn(L"CloseHandle-cata.initialize_table"); }
@@ -80,13 +100,12 @@ void CATALOGUE::make_name_tree()
     }
 }
 
-// Load the unique portion of each CSV file name into a vector.
+// Fetch functions.
 wstring CATALOGUE::get_csv_path(int csv_index)
 {
     wstring csv_path = csv_trunk + csv_branches[csv_index];
     return csv_path;
 }
-
 QString CATALOGUE::get_csv_branch(int csv_index)
 {
     wstring wbranch = csv_branches[csv_index];
@@ -101,70 +120,28 @@ QString CATALOGUE::get_qname()
 {
     return qname;
 }
-
-// Return a list of SQL statements to create the main table and all nested subtables for this catalogue.
-QVector<QString> CATALOGUE::get_create_table_statements(int cores)
+QVector<QVector<QVector<int>>> CATALOGUE::get_tree()
 {
-    QElapsedTimer timer;
-    QVector<QString> work;
-    model.create_table_cata(work);
-    model.create_table_csvs(work, gid_list);
-    timer.start();
-    //model.create_table_subs(work, gid_list);
-    qDebug() << "Create Table, subs: " << timer.restart();
-    QString tc;
-    qlog("Created a SQL statement list to insert " + tc.setNum(work.size()) + " tables from catalogue " + qname + ".");
-    return work;
+    return model_tree;
+}
+QVector<QString> CATALOGUE::get_gid_list()
+{
+    return gid_list;
+}
+QString CATALOGUE::get_create_sub_template()
+{
+    QString sub_template;
+    model.create_sub_template(sub_template);
+    return sub_template;
 }
 
-void CATALOGUE::create_table_taskmaster(QVector<QString>& work, QVector<QString>& gid_list, int cores)
+// Returns <statement, tname> for the primary catalogue table (first index) and the CSV tables.
+QVector<QVector<QString>> CATALOGUE::get_nobles()
 {
-    int workload = gid_list.size() / cores;
-    //int remainder = gid_list.size() % cores;
-    QVector<QVector<QString>> gid_pie(cores, QVector<QString>());
-    int bot = 0;
-    int top = workload - 1;
-    for (int ii = 0; ii < cores; ii++)
-    {
-        if (ii < cores - 1)
-        {
-            gid_pie[ii] = string_vector_slicer(gid_list, bot, top);
-            bot += workload;
-            top += workload;
-        }
-        else
-        {
-            gid_pie[ii] = string_vector_slicer(gid_list, bot, gid_list.size() - 1);
-        }
-    }
-
-
+    QVector<QVector<QString>> nobles;
+    model.create_table_cata(nobles);
+    model.create_table_csvs(nobles, gid_list);
+    return nobles;
 }
 
-// Return a list of SQL statements to insert the row values for each table/subtable in one given CSV.
-QVector<QString> CATALOGUE::get_CSV_insert_value_statements(int csv_index)
-{
-    QVector<QString> work;
-    make_name_tree();
-    wstring csv_path = get_csv_path(csv_index);
-    size_t wpos1 = csv_path.find(L'(');
-    size_t wpos2 = csv_path.find(L')', wpos1);
-    wstring wtemp = csv_path.substr(wpos1 + 1, wpos2 - wpos1 - 1);
-    QString gid = QString::fromStdWString(wtemp);
-    bool yesno;
-    gid.toUInt(&yesno);
-    if (!yesno) { err8("gid.toUInt-cata.get_CSV_insert_value_statements"); }
 
-    HANDLE hfile = CreateFileW(csv_path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-cata.get_CSV_insert_value_statements"); }
-    QString qfile = q_memory(hfile);
-    int pos1 = qfile.lastIndexOf("Catalogue Number ", qfile.size() - 4);
-    pos1 += 17;
-    int pos2 = qfile.indexOf('.', pos1);
-    QString cata_name = qfile.mid(pos1, pos2 - pos1);
-
-    CSV page;
-    page.scan(qfile, cata_name);
-    page.insert_value_all_statements(work, model_tree, model_subtable_names, model_subtable_text_variables);
-    return work;
-}
