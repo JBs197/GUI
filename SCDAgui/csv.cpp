@@ -13,6 +13,22 @@ void CSV::scan(QString& qf, QString& qn)
     extract_model_rows(pos1);
     tree_walker();
 }
+void CSV::quick_scan(QString& qf, wstring& trunk, wstring& branch)
+{
+    qfile = qf;
+    size_t wpos1, wpos2;
+    wpos2 = trunk.rfind(L'\\');
+    wpos1 = trunk.rfind(L'\\', wpos2 - 1);
+    wstring temp = trunk.substr(wpos1 + 1, wpos2 - wpos1 - 1);
+    qname = QString::fromStdWString(temp);
+    wpos1 = branch.find(L'(');
+    wpos2 = branch.find(L')', wpos1 + 1);
+    temp = branch.substr(wpos1 + 1, wpos2 - wpos1 - 1);
+    gid = QString::fromStdWString(temp);
+    int pos0 = extract_variables();
+    int pos1 = extract_column_titles(pos0);
+    extract_model_rows(pos1);
+}
 
 void CSV::set_gid(QString& gd)
 {
@@ -133,6 +149,16 @@ QVector<QVector<QVector<int>>> CSV::get_model_tree()
 {
     return tree;
 }
+QVector<QString> CSV::get_row_titles()
+{
+    int num_rows = model_rows.size();
+    QVector<QString> titles(num_rows);
+    for (int ii = 0; ii < num_rows; ii++)
+    {
+        titles[ii] = model_rows[ii][0];
+    }
+    return titles;
+}
 
 // Recursively determine if the given row is a parent. If so, add it to the tree and do the same for all
 // its children. Returns first yet-to-be checked index in the current indentation's subtable list.
@@ -159,7 +185,7 @@ int CSV::is_parent(QVector<QVector<QVector<int>>>& subtables, QVector<int> genea
                 {
                     new_genealogy = genealogy;
                     new_genealogy.append(tree[current_pos][1][jj]);
-                    new_start_index = is_parent(tree, new_genealogy, indentation + 1, new_start_index);  // ...
+                    new_start_index = is_parent(subtables, new_genealogy, indentation + 1, new_start_index);  // ...
                 }
             }
 
@@ -252,13 +278,13 @@ void CSV::extract_model_rows(int pos0)
     nl2 = qfile.indexOf('\n', nl1 + 1);
     do
     {
-        model_rows.append(QVector<QString>());
-        row_index = model_rows.size() - 1;
         pos1 = qfile.indexOf('"', nl1);
         pos2 = qfile.indexOf('"', pos1 + 1);
         temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
         spaces = qclean(temp1, 0);
         if (temp1 == "Note") { break; }  // Primary exit from the loop.
+        model_rows.append(QVector<QString>());
+        row_index = model_rows.size() - 1;
         indentation = index_card(space_index, spaces);
         if (indentation < 0) { err(L"index_card-csv.extract_model_rows"); }
 
@@ -398,72 +424,20 @@ QString CSV::unique_row_title_multicol(int row_index, int& highest_indent)
     return unique;
 }
 
-// Convenience function to obtain the value data from a specific line in the CSV file.
-void CSV::extract_row_values(int& pos0, QVector<QString>& values, QVector<int>& isint)
-{
-    QString val;
-    bool success;
-    int pos1, pos2, nl;
-    pos2 = pos0;
-    nl = qfile.indexOf('\n', pos0 + 1);
-    pos1 = qfile.indexOf('"', pos2);
-    pos2 = qfile.indexOf('"', pos1 + 1);
-    for (int ii = 0; ii < values.size(); ii++)
-    {
-        pos1 = qfile.indexOf(',', pos2 + 1);
-        pos2 = qfile.indexOf(',', pos1 + 1);
-        if (pos2 > nl)
-        {
-            pos2 = qfile.indexOf(' ', pos1 + 1);
-            if (pos2 > nl)
-            {
-                pos2 = qfile.indexOf('\r', pos1 + 1);
-            }
-        }
-        if (pos1 > nl || pos2 > nl) { err8("find commas-csv.extract_row_values"); }
-        val = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
-        qclean(val, 0);
-        values[ii] = val;
-        if (val == "..")  // Indicates "no data" from Stats Canada.
-        {
-            isint[ii] = -1;
-            continue;
-        }
-
-        pos1 = val.indexOf('.');
-        if (pos1 < 0)
-        {
-            val.toInt(&success);
-            if (!success)
-            {
-                err8("stoi error in csv.extract_row_values");
-            }
-            isint[ii] = 1;
-        }
-        else
-        {
-            val.toDouble(&success);
-            if (!success)
-            {
-                err8("stod error in csv.extract_row_values");
-            }
-            isint[ii] = 0;
-        }
-    }
-    pos0 = nl;
-}
-
 // Build a SQL statement to create the primary table, which encompasses the whole catalogue.
-void CSV::create_table_cata(QVector<QVector<QString>>& work)
+// Returns a list of column titles for the primary (linearized) catalogue table.
+QVector<QString> CSV::create_table_cata(QVector<QVector<QString>>& work)
 {
-    int row, base_indent;
+    int base_indent;
     QString base, temp;
+    QVector<QString> primary_columns = { "GID" };
     QString sql = "CREATE TABLE IF NOT EXISTS \"T" + qname + "\" ( GID INTEGER PRIMARY KEY, ";
     for (int ii = 0; ii < text_variables.size(); ii++)
     {
         sql += "\"";
         sql += text_variables[ii][0];
         sql += "\" TEXT, ";
+        primary_columns.append(text_variables[ii][0]);
     }
 
     unique_row_buffer.clear();
@@ -486,6 +460,7 @@ void CSV::create_table_cata(QVector<QVector<QString>>& work)
                 sql += "\"";
                 sql += temp;
                 sql += "\" NUMERIC, ";
+                primary_columns.append(temp);
             }
         }
     }
@@ -497,6 +472,7 @@ void CSV::create_table_cata(QVector<QVector<QString>>& work)
             sql += "\"";
             sql += temp;
             sql += "\" NUMERIC, ";
+            primary_columns.append(temp);
         }
     }
 
@@ -505,6 +481,7 @@ void CSV::create_table_cata(QVector<QVector<QString>>& work)
     work.append(QVector<QString>(2));
     work[work.size() - 1][0] = sql;
     work[work.size() - 1][1] = "T" + qname;
+    return primary_columns;
 }
 
 // Build a list of SQL statements to create all the secondary (CSV) tables for this catalogue.
@@ -581,7 +558,7 @@ void CSV::create_sub_template(QString& work)
 }
 
 // Build a SQL statement to insert a row into the (non-primary) table, with the table name missing.
-void CSV::create_row_template(QString& work)
+void CSV::insert_row_template(QString& work)
 {
     int col_count = 0;
     work = "INSERT INTO \"!!!\" ( ";

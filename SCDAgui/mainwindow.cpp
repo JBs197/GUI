@@ -173,70 +173,116 @@ void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
     parent->addChildren(branch);
 }
 
-/*
 void MainWindow::populate_cata(int cata_index)
 {
-    QVector<QVector<QVector<int>>> tree = binder[cata_index].get_tree();
     QVector<QString> gid_list = binder[cata_index].get_gid_list();
-    int workload = gid_list.size() / cores;
-    int bot = 0;
-    int top = workload - 1;
-
-    auto insert_csv_values = [=] (int bot, int top)  // Interval is inclusive.
+    wstring csv_trunk = binder[cata_index].get_csv_trunk();
+    vector<wstring> csv_branches = binder[cata_index].get_csv_branches();
+    QVector<QString> column_titles = binder[cata_index].get_column_titles();
+    QVector<QString> row_titles = binder[cata_index].get_row_titles();
+    QVector<QVector<QVector<int>>> tree = binder[cata_index].get_tree();
+    QString primary_template = binder[cata_index].get_primary_columns_template();
+    QString qname = binder[cata_index].get_qname();
+    bool multi_column;
+    if (column_titles.size() > 2)
     {
-        QString name, stmt, temp;
-        int pos1, ancestry, cheddar;
+        multi_column = 1;
+    }
+    else
+    {
+        multi_column = 0;
+    }
+
+    DWORD compass = GetCurrentThreadId();
+
+    auto populate_cata_piece = [=] (int bot, int top)  // Interval is inclusive.
+    {
+        QVector<QVector<QString>> rows;
+        QString qfile;
+        wstring csv_path;
+        QString temp;
+        bool fine;
+        int inum;
+        double dnum;
         UINT message;
-        for (int ii = bot; ii <= top; ii++)
+        for (int ii = bot; ii <= top; ii++)  // For every assigned CSV...
         {
-            for (int jj = 0; jj < tree.size(); jj++)
+            csv_path = csv_trunk + csv_branches[ii];
+            qfile = q_memory(csv_path);
+            rows = extract_csv_data_rows(qfile, row_titles, multi_column);
+
+            // Insert this CSV's values into the catalogue's primary table.
+            QSqlQuery primary_row(db);
+            fine = primary_row.prepare(primary_template);
+            if (!fine)
             {
-                name = "T" + qname + "$" + gid_list[ii];
-                ancestry = tree[jj][0].size();
-                cheddar = 2;
-                for (int ii = 0; ii < ancestry; ii++)
+                sqlerr("primary_row.prepare-populate_cata_piece", primary_row.lastError());
+            }
+            for (int jj = 0; jj < rows.size(); jj++)  // For every data row...
+            {
+                for (int kk = 1; kk < rows[jj].size(); kk++)  // For every column with a numeric value...
                 {
-                    for (int jj = 0; jj < cheddar; jj++)
+                    inum = rows[jj][kk].toInt(&fine);
+                    if (fine)
                     {
-                        name += "$";
+                        primary_row.addBindValue(inum);  // If the value is an integer, insert it as such.
                     }
-                    cheddar++;
-                    temp = QString::number(tree[jj][0][ii]);
-                    name += temp;
-                }
-
-                stmt = sub_template;
-                pos1 = stmt.indexOf("!!!");
-                stmt.replace(pos1, 3, name);
-
-                m_executor.lockForWrite();
-                QSqlError qerror = executor(stmt);
-                m_executor.unlock();
-                if (qerror.isValid())
-                {
-                    sqlerr("mainwindow.subtables_mt for " + name, qerror);
+                    else
+                    {
+                        dnum = rows[jj][kk].toDouble(&fine);
+                        if (fine)
+                        {
+                            primary_row.addBindValue(dnum);  // If the value is a double, insert it as such.
+                        }
+                        else
+                        {
+                            primary_row.addBindValue(-999);  // If the value is nonconformant, insert it as -999
+                            temp.setNum(jj);                 // and make a note of the failure in the error log.
+                            qwarn("Erroneous value in cata " + qname + " | GID " + gid_list[ii] + " | row " + temp);
+                        }
+                    }
                 }
             }
+
+            m_executor.lockForWrite();
+            fine = primary_row.exec();
+            if (!fine)
+            {
+                sqlerr("primary_row.exec-populate_cata_piece", primary_row.lastError());
+            }
+            m_executor.unlock();
+
             message = WM_APP + ii;
             if (!PostThreadMessageW(compass, message, 0, 0))
             {
-                winwarn(L"subtables_mt");
+                winwarn(L"populate_cata_piece");
             }
         }
     };
 
+    int glist = binder[cata_index].get_gid_size();
+    int workload = glist / cores;
+    int bot = 0;
+    int top = workload - 1;
+
+    reset_bar(glist);
+    bool aol;
+    LPMSG mailbox = new MSG;
+    UINT enigma;
+
+    vector<std::thread> tapestry;
     for (int ii = 0; ii < cores; ii++)
     {
         if (ii < cores - 1)
         {
-            std::thread thr(insert_subtable_gid, bot, top);
+            std::thread thr(populate_cata_piece, bot, top);
             tapestry.push_back(std::move(thr));
             bot += workload;
             top += workload;
         }
         else
         {
-            std::thread thr(insert_subtable_gid, bot, gid_list.size() - 1);
+            std::thread thr(populate_cata_piece, bot, glist - 1);
             tapestry.push_back(std::move(thr));
         }
     }
@@ -251,7 +297,8 @@ void MainWindow::populate_cata(int cata_index)
             update_bar();
         }
         QCoreApplication::processEvents();
-    }    for (auto& th : tapestry)
+    }
+    for (auto& th : tapestry)
     {
         if (th.joinable())
         {
@@ -259,9 +306,8 @@ void MainWindow::populate_cata(int cata_index)
         }
     }
     delete mailbox;
-    logger("Inserted all tables for catalogue " + cat.get_qname());
+    logger("Inserted all data rows for catalogue " + qname);
 }
-*/
 
 void MainWindow::benchmark1(QString& cata_path)
 {
@@ -333,7 +379,7 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
     QString sub_template = cat.get_create_sub_template();
     QString qname = cat.get_qname();
     DWORD compass = GetCurrentThreadId();
-    LPMSG mailbox = new MSG;
+    MSG mailbox;
     int num_gid = gid_list.size();
     reset_bar(num_gid);
 
@@ -342,8 +388,6 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
         QString name, stmt, temp;
         int pos1, ancestry, cheddar;
         UINT message;
-        QElapsedTimer timer;
-        timer.start();
         for (int ii = bot; ii <= top; ii++)
         {
             for (int jj = 0; jj < tree.size(); jj++)
@@ -379,6 +423,8 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
             {
                 winwarn(L"subtables_mt");
             }
+            temp.setNum(ii);
+            qDebug() << "A thread has finished #" << temp;
         }
     };
 
@@ -387,7 +433,7 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
     int bot = 0;
     int top = workload - 1;
     bool aol = 0;
-    int enigma;
+    UINT enigma;
     for (int ii = 0; ii < cores; ii++)
     {
         if (ii < cores - 1)
@@ -405,23 +451,23 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
     }
     while (jobs_done < jobs_max)
     {
-        aol = PeekMessageW(mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
+        aol = PeekMessageW(&mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
         if (aol)
         {
-            enigma = mailbox->message;
+            enigma = mailbox.message;
             enigma -= WM_APP;
             qDebug() << "Received message: " << enigma;
             update_bar();
         }
         QCoreApplication::processEvents();
-    }    for (auto& th : tapestry)
+    }
+    for (auto& th : tapestry)
     {
         if (th.joinable())
         {
             th.join();
         }
     }
-    delete mailbox;
     logger("Inserted all tables for catalogue " + cat.get_qname());
 }
 
@@ -570,6 +616,7 @@ void MainWindow::on_pB_insert_clicked()
     QString qcata = catas_to_do[0]->text(1);
     QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
     int cata_index = insert_cata_tables(cata_path);
+    populate_cata(cata_index);
     //log8(qcata.toStdString() + " was assigned binder index " + to_string(cata_index));
     //populate_table(cata_index);
 
@@ -585,12 +632,14 @@ void MainWindow::on_pB_test_clicked()
     qDebug() << "Flags after: " << bbq;
 }
 
-// Runs different versions of application functions and reports their respective running times.
-// Currently testing singlethreaded, multithreaded, and Qt functions on a dummy catalogue containing 100 CSV files.
+// Runs different versions of application functions and reports their respective running times. Currently testing
+// singlethreaded, std multithreaded, and Qt multithreaded functions on a dummy catalogue containing 100 CSV files.
 void MainWindow::on_pB_benchmark_clicked()
 {
     wdrive = L"F:";
     qdrive = "F:";
     QString cata_path = "F:\\3067\\97-570-X1981005";
-    benchmark1(cata_path);
+    reset_db(db_qpath);
+    int cata_index = insert_cata_tables(cata_path);
+    populate_cata(cata_index);
 }

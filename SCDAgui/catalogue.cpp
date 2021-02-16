@@ -41,10 +41,8 @@ void CATALOGUE::initialize_table()
     HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
     if (hfile1 == INVALID_HANDLE_VALUE) { winerr(L"FindFirstFile-cata.initialize_table"); }
     wstring sample_name = wpath + L"\\" + info.cFileName;
-    HANDLE hfile2 = CreateFileW(sample_name.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hfile2 == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-cata.initialize_table"); }
 
-    qfile = q_memory(hfile2);
+    qfile = q_memory(sample_name);
     pos1 = qfile.lastIndexOf("Catalogue Number ", qfile.size() - 4);
     pos1 += 17;
     pos2 = qfile.indexOf('.', pos1);
@@ -74,10 +72,9 @@ void CATALOGUE::initialize_table()
 
     model.scan(qfile, qname);  // This will populate the embedded CSV object.
     make_name_tree();
-    model_tree = model.get_model_tree();
+    tree = model.get_model_tree();
 
     if (!FindClose(hfile1)) { warn(L"FindClose-cata.initialize_table"); }
-    if (!CloseHandle(hfile2)) { warn(L"CloseHandle-cata.initialize_table"); }
     log8(sname + " initialized.\r\n");
 }
 
@@ -99,6 +96,49 @@ void CATALOGUE::make_name_tree()
     }
 }
 
+// Worker thread functions.
+void CATALOGUE::set_tree(QVector<QVector<QVector<int>>> sapling)
+{
+    tree = sapling;
+}
+void CATALOGUE::set_gid_list(QVector<QString> list)
+{
+    gid_list = list;
+}
+void CATALOGUE::set_primary_columns_template(QString templa)
+{
+    primary_table_column_template = templa;
+}
+void CATALOGUE::set_csv_trunk(wstring trunk)
+{
+    csv_trunk = trunk;
+    size_t pos2 = trunk.rfind(L'\\');
+    size_t pos1 = trunk.rfind(L'\\', pos2 - 1);
+    wstring temp = trunk.substr(pos1 + 1, pos2 - pos1 - 1);
+    qname = QString::fromStdWString(temp);
+}
+void CATALOGUE::set_csv_branches(vector<wstring> branches)
+{
+    csv_branches = branches;
+}
+void CATALOGUE::set_multicol(bool mc)
+{
+    multi_column = mc;
+}
+void CATALOGUE::set_qfile(int csv_index)
+{
+    wstring csv_path = get_csv_path(csv_index);
+    qfile = q_memory(csv_path);
+}
+void CATALOGUE::set_column_titles(QVector<QString> col)
+{
+    column_titles = col;
+}
+void CATALOGUE::set_row_titles(QVector<QString> rt)
+{
+    row_titles = rt;
+}
+
 // Fetch functions.
 wstring CATALOGUE::get_csv_path(int csv_index)
 {
@@ -111,6 +151,14 @@ QString CATALOGUE::get_csv_branch(int csv_index)
     QString qbranch = QString::fromStdWString(wbranch);
     return qbranch;
 }
+wstring CATALOGUE::get_csv_trunk()
+{
+    return csv_trunk;
+}
+vector<wstring> CATALOGUE::get_csv_branches()
+{
+    return csv_branches;
+}
 QString CATALOGUE::get_gid(int csv_index)
 {
     return gid_list[csv_index];
@@ -121,7 +169,7 @@ QString CATALOGUE::get_qname()
 }
 QVector<QVector<QVector<int>>> CATALOGUE::get_tree()
 {
-    return model_tree;
+    return tree;
 }
 QVector<QString> CATALOGUE::get_gid_list()
 {
@@ -133,20 +181,127 @@ QString CATALOGUE::get_create_sub_template()
     model.create_sub_template(sub_template);
     return sub_template;
 }
-QString CATALOGUE::get_create_row_template()
+QString CATALOGUE::get_insert_row_template()
 {
     QString row_template;
-    model.create_row_template(row_template);
+    model.insert_row_template(row_template);
     return row_template;
+}
+int CATALOGUE::get_gid_size()
+{
+    return gid_list.size();
+}
+bool CATALOGUE::get_multicol()
+{
+    multi_column = model.get_multi_column();
+    return multi_column;
+}
+QVector<QString> CATALOGUE::get_column_titles()
+{
+    QVector<QString> col = model.get_column_titles();
+    return col;
+}
+QVector<QString> CATALOGUE::get_row_titles()
+{
+    row_titles = model.get_row_titles();
+    return row_titles;
+}
+
+// Template fabrication functions.
+QString CATALOGUE::get_primary_columns_template()
+{
+    int col_count = primary_table_column_titles.size();
+    QString primary_template = "INSERT INTO \"" + tname + "\" ( ";
+    for (int ii = 0; ii < col_count; ii++)
+    {
+        primary_template += "\"";
+        primary_template += primary_table_column_titles[ii];
+        primary_template += "\", ";
+    }
+    primary_template.remove(primary_template.size() - 2, 2);
+    primary_template += " ) VALUES ( ";
+    for (int ii = 0; ii < col_count; ii++)
+    {
+        primary_template += "?, ";
+    }
+    primary_template.remove(primary_template.size() - 2, 2);
+    primary_template += " )";
+    return primary_template;
 }
 
 // Returns <statement, tname> for the primary catalogue table (first index) and the CSV tables.
 QVector<QVector<QString>> CATALOGUE::get_nobles()
 {
     QVector<QVector<QString>> nobles;
-    model.create_table_cata(nobles);
+    primary_table_column_titles = model.create_table_cata(nobles);
     model.create_table_csvs(nobles, gid_list);
     return nobles;
 }
 
+// Returns a CSV's data rows.
+QVector<QVector<QString>> CATALOGUE::extract_data_rows()
+{
+    QVector<QVector<QString>> rows(row_titles.size(), QVector<QString>());
+    int pos1, pos2, pos3, nl1, nl2;
+    QChar math;
+    pos1 = qfile.size() - 1;
+    do
+    {
+        pos1 = qfile.lastIndexOf('=', pos1 - 1);
+        math = qfile[pos1 - 1];
+        if (math == '<' || math == '>')
+        {
+            pos2 = 1;
+        }
+        else
+        {
+            pos2 = 0;
+        }
+    } while (pos2);
 
+    nl1 = qfile.indexOf('\n', pos1);
+    if (multi_column)
+    {
+        nl1 = qfile.indexOf('\n', nl1 + 1);
+    }
+    nl2 = qfile.indexOf('\n', nl1 + 1);
+
+    int row_index = -1;
+    QString temp1;
+    while (nl2 > 0)
+    {
+        row_index++;
+        rows[row_index].append(row_titles[row_index]);
+
+        pos1 = qfile.lastIndexOf('"', nl2);
+        pos2 = qfile.indexOf(',', pos1);
+        do
+        {
+            pos1 = pos2;
+            pos2 = qfile.indexOf(',', pos1 + 1);
+            if (pos2 > nl2)  // If we have reached the last value on this line...
+            {
+                pos3 = qfile.indexOf(' ', pos1 + 1);  // ... check for a space before newline.
+                if (pos3 > nl2)
+                {
+                    pos3 = qfile.indexOf('\r', pos1 + 1);  // ... confirm end of line.
+                    if (pos3 > nl2)
+                    {
+                        err8("pos error in extract_classic_rows");
+                    }
+                }
+                temp1 = qfile.mid(pos1 + 1, pos3 - pos1 - 1);
+                rows[row_index].append(temp1);
+            }
+            else
+            {
+                temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
+                rows[row_index].append(temp1);
+            }
+        } while (pos2 < nl2);  // All strings after the first are values, in string form.
+
+        nl1 = nl2;
+        nl2 = qfile.indexOf('\n', nl1 + 1);
+    }
+    return rows;
+}

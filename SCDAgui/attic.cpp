@@ -825,3 +825,249 @@ void CSV::organize_subtables(int pos0)
     }
 }
 
+QVector<int> CSV::insert_value_all_statements(QVector<QString>& work, QVector<QVector<QVector<int>>>& model_tree, QVector<QString>& subtable_names, QVector<QVector<QString>>& subtable_text_variables)
+{
+    QVector<QVector<int>> int_double_results;
+    QVector<int> int_double_subtable_results;
+    // Do the main table first...
+    int row, sindex;
+    int icount = 0;
+    int dcount = 0;
+    QString sql = "INSERT INTO \"T" + qname + "\" ( GID, ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][0];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < is_int.size(); ii++)
+    {
+        row = is_int[ii][0];
+        sql += "\"";
+        sql += row_titles[row];
+        sql += "\", ";
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql += " ) VALUES ( ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][1];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < is_int.size(); ii++)
+    {
+        sindex = is_int[ii][2];
+        sql += "\"";
+        sql += row_values[sindex];
+        sql += "\", ";
+
+        if (is_int[ii][1] == 1) { icount++; }
+        else if (is_int[ii][1] == 0) { dcount++; }
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" );");
+    work.append(sql);
+    int_double_results.append({ icount, dcount });
+
+    // Add INSERT statements for all subtables in this CSV.
+    int subtrees = model_tree.size();
+    for (int ii = 0; ii < subtrees; ii++)
+    {
+        int_double_subtable_results = insert_subtable_statement(work, model_tree[ii], subtable_names, subtable_text_variables);
+        int_double_results.append(int_double_subtable_results);
+    }
+
+    // Consistency check.
+    icount = int_double_results[0][0];
+    dcount = int_double_results[0][1];
+    for (int ii = 1; ii < int_double_results.size(); ii++)
+    {
+        if (int_double_results[ii][0] != icount)
+        {
+            err8("Inconsistent integer value counts for cata " + qname.toStdString() + ", GID " + gid.toStdString());
+        }
+        else if (int_double_results[ii][1] != dcount)
+        {
+            err8("Inconsistent double value counts for cata " + qname.toStdString() + ", GID " + gid.toStdString());
+        }
+    }
+
+    return int_double_results[0];
+}
+
+QVector<int> CSV::insert_subtable_statement(QVector<QString>& work, QVector<QVector<int>>& model_subtree, QVector<QString>& subtable_names, QVector<QVector<QString>>& subtable_text_variables)
+{
+    int tree_index = work.size() - 1;
+    int isint_index;
+    int subtable_size = subtable_text_variables.size();
+    int icount = 0;
+    int dcount = 0;
+
+    QString sql = "INSERT INTO \"" + subtable_names[tree_index] + "\" ( ";
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][0];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < subtable_size; ii++)
+    {
+        sql += "\"";
+        sql += subtable_text_variables[ii][0];
+        sql += "\", ";
+    }
+    int num_val_rows = model_subtree[1].size();
+    for (int ii = 0; ii < num_val_rows; ii++)
+    {
+        sql += "\"";
+        sql += row_titles[model_subtree[1][ii]];
+        sql += "\", ";
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" ) VALUES ( ");
+    for (int ii = 0; ii < text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += text_variables[ii][1];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < subtable_size; ii++)
+    {
+        sql += "\"";
+        sql += subtable_text_variables[ii][1];
+        sql += "\", ";
+    }
+    for (int ii = 0; ii < num_val_rows; ii++)
+    {
+        sql += "\"";
+        sql += map_values.value(model_subtree[1][ii]);
+        sql += "\", ";
+        isint_index = map_isint.value(model_subtree[1][ii]);
+        if (is_int[isint_index][1] == 1)
+        {
+            icount++;
+        }
+        else if (is_int[isint_index][1] == 0)
+        {
+            dcount++;
+        }
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" );");
+    work.append(sql);
+    QVector<int> int_double_result = { icount, dcount };
+    return int_double_result;
+}
+
+// Convenience function to obtain the value data from a specific line in the CSV file.
+void CSV::extract_row_values(int& pos0, QVector<QString>& values, QVector<int>& isint)
+{
+    QString val;
+    bool success;
+    int pos1, pos2, nl;
+    pos2 = pos0;
+    nl = qfile.indexOf('\n', pos0 + 1);
+    pos1 = qfile.indexOf('"', pos2);
+    pos2 = qfile.indexOf('"', pos1 + 1);
+    for (int ii = 0; ii < values.size(); ii++)
+    {
+        pos1 = qfile.indexOf(',', pos2 + 1);
+        pos2 = qfile.indexOf(',', pos1 + 1);
+        if (pos2 > nl)
+        {
+            pos2 = qfile.indexOf(' ', pos1 + 1);
+            if (pos2 > nl)
+            {
+                pos2 = qfile.indexOf('\r', pos1 + 1);
+            }
+        }
+        if (pos1 > nl || pos2 > nl) { err8("find commas-csv.extract_row_values"); }
+        val = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
+        qclean(val, 0);
+        values[ii] = val;
+        if (val == "..")  // Indicates "no data" from Stats Canada.
+        {
+            isint[ii] = -1;
+            continue;
+        }
+
+        pos1 = val.indexOf('.');
+        if (pos1 < 0)
+        {
+            val.toInt(&success);
+            if (!success)
+            {
+                err8("stoi error in csv.extract_row_values");
+            }
+            isint[ii] = 1;
+        }
+        else
+        {
+            val.toDouble(&success);
+            if (!success)
+            {
+                err8("stod error in csv.extract_row_values");
+            }
+            isint[ii] = 0;
+        }
+    }
+    pos0 = nl;
+}
+
+void MainWindow::populate_cata_piece(CATALOGUE worker, int bot, int top)
+{
+    QVector<QVector<QString>> rows;
+    QString qname = worker.get_qname();
+    QString temp;
+    bool fine;
+    int inum;
+    double dnum;
+    QString primary_template = worker.get_primary_columns_template();
+    for (int ii = bot; ii <= top; ii++)  // For every assigned CSV...
+    {
+        worker.set_qfile(ii);
+        rows = worker.extract_data_rows();
+
+        // Insert this CSV's values into the catalogue's primary table.
+        QSqlQuery primary_row(db);
+        fine = primary_row.prepare(primary_template);
+        if (!fine)
+        {
+            sqlerr("primary_row.prepare-populate_cata_piece", primary_row.lastError());
+        }
+        for (int jj = 0; jj < rows.size(); jj++)  // For every data row...
+        {
+            for (int kk = 1; kk < rows[jj].size(); kk++)  // For every column with a numeric value...
+            {
+                inum = rows[jj][kk].toInt(&fine);
+                if (fine)
+                {
+                    primary_row.addBindValue(inum);  // If the value is an integer, insert it as such.
+                }
+                else
+                {
+                    dnum = rows[jj][kk].toDouble(&fine);
+                    if (fine)
+                    {
+                        primary_row.addBindValue(dnum);  // If the value is a double, insert it as such.
+                    }
+                    else
+                    {
+                        primary_row.addBindValue(-999);  // If the value is nonconformant, insert it as -999
+                        temp.setNum(jj);                 // and make a note of the failure in the error log.
+                        qwarn("Erroneous value in cata " + qname + " | GID " + worker.get_gid(ii) + " | row " + temp);
+                    }
+                }
+            }
+        }
+        m_executor.lockForWrite();
+        fine = primary_row.exec();
+        if (!fine)
+        {
+            sqlerr("primary_row.exec-populate_cata_piece", primary_row.lastError());
+        }
+        m_executor.unlock();
+    }
+}
+

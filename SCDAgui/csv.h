@@ -11,6 +11,7 @@ public:
     explicit CSV() {}
     ~CSV() {}
     void scan(QString&, QString&);
+    void quick_scan(QString&, wstring&, wstring&);
     QVector<int> insert_value_all_statements(QVector<QString>&, QVector<QVector<QVector<int>>>&, QVector<QString>&, QVector<QVector<QString>>&);
     void tree_walker();
     void set_gid(QString&);
@@ -18,11 +19,12 @@ public:
     QVector<QString> get_column_titles();
     QVector<QVector<QString>> get_text_variables();
     QVector<QVector<QVector<int>>> get_model_tree();
-    void create_table_cata(QVector<QVector<QString>>&);
+    QVector<QString> create_table_cata(QVector<QVector<QString>>&);
     void create_table_csvs(QVector<QVector<QString>>&, QVector<QString>&);
     void create_table_subs(QVector<QString>&, QVector<QString>&, QVector<QVector<QVector<int>>>&);
     void create_sub_template(QString&);
-    void create_row_template(QString&);
+    void insert_row_template(QString&);
+    QVector<QString> get_row_titles();
 
 private:
     QString qfile;
@@ -35,9 +37,6 @@ private:
     QMap<int, int> map_isint;
     QVector<QVector<QString>> text_variables;  // Form [row][text var type, text var value]
     QVector<QString> column_titles;
-    //QVector<QString> row_titles;  // Form [row]. Title includes '+' to show space index.
-    //QVector<QVector<int>> is_int;  // Form [new index][row, bool, sindex]. Negative bool (ha) indicates bad data on file.
-    //QVector<QString> row_values;  // Form [sindex]
     QVector<QVector<QVector<int>>> tree;  // Form [path possibility][genealogy][leaves]
     QVector<QString> unique_row_buffer;  // Form [value's indentation]. It is initialized with an empty string in 'scan'.
     QVector<QVector<QString>> model_rows;  // Form [row_index][title column, data columns][value]

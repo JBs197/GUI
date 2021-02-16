@@ -41,6 +41,7 @@ void err8(string);
 void winerr(wstring);
 void warn(wstring);
 void warn8(string);
+void qwarn(QString);
 void sqlwarn(wstring, QSqlError);
 void winwarn(wstring);
 
@@ -57,7 +58,7 @@ int qclean(QString&, int);
 
 // Read into memory a local file.
 wstring bin_memory(HANDLE&);
-QString q_memory(HANDLE&);
+QString q_memory(wstring&);
 wstring w_memory(wstring&);
 
 // Given a full path name and a string, print that string to file (UTF-8 encoding).
@@ -86,5 +87,8 @@ vector<vector<wstring>> get_subfolders2(wstring);
 // Search a given vector for a particular value, and return the index. If not found, insert and return.
 // Returns negative (error) if a new entry fails to match and is not the largest entry.
 int index_card(vector<int>&, int);
+
+// Returns a CSV's data rows.
+QVector<QVector<QString>> extract_csv_data_rows(QString&, QVector<QString>, bool);
 
 #endif

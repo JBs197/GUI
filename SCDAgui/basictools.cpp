@@ -173,6 +173,21 @@ void warn8(string func8)
         CloseHandle(hprinter);
     }
 }
+void qwarn(QString qfunc)
+{
+    string func8 = qfunc.toStdString();
+    string name = db_root8 + "\\SCDA Error Log.txt";
+    string message = timestamperA() + " Warning: " + func8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
 void sqlwarn(wstring func, QSqlError qerror)
 {
     string func8 = utf16to8(func);
@@ -418,8 +433,10 @@ wstring bin_memory(HANDLE& hfile)
     delete[] buffer;
     return bin;
 }
-QString q_memory(HANDLE& hfile)
+QString q_memory(wstring& full_path)
 {
+    HANDLE hfile = CreateFileW(full_path.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-q_memory"); }
     DWORD size = GetFileSize(hfile, NULL);
     DWORD bytes_read;
     LPWSTR buffer = new WCHAR[size / 2];
@@ -824,3 +841,70 @@ int index_card(vector<int>& shelf, int book)
     return size;
 }
 
+// Returns a CSV's data rows.
+QVector<QVector<QString>> extract_csv_data_rows(QString& qfile, QVector<QString> row_titles, bool multi_column)
+{
+    QVector<QVector<QString>> rows(row_titles.size(), QVector<QString>());
+    int pos1, pos2, pos3, nl1, nl2;
+    QChar math;
+    pos1 = qfile.size() - 1;
+    do
+    {
+        pos1 = qfile.lastIndexOf('=', pos1 - 1);
+        math = qfile[pos1 - 1];
+        if (math == '<' || math == '>')
+        {
+            pos2 = 1;
+        }
+        else
+        {
+            pos2 = 0;
+        }
+    } while (pos2);
+
+    nl1 = qfile.indexOf('\n', pos1);
+    if (multi_column)
+    {
+        nl1 = qfile.indexOf('\n', nl1 + 1);
+    }
+    nl2 = qfile.indexOf('\n', nl1 + 1);
+
+    int row_index = -1;
+    QString temp1;
+    while (nl2 > 0)
+    {
+        row_index++;
+        rows[row_index].append(row_titles[row_index]);
+
+        pos1 = qfile.lastIndexOf('"', nl2);
+        pos2 = qfile.indexOf(',', pos1);
+        do
+        {
+            pos1 = pos2;
+            pos2 = qfile.indexOf(',', pos1 + 1);
+            if (pos2 > nl2)  // If we have reached the last value on this line...
+            {
+                pos3 = qfile.indexOf(' ', pos1 + 1);  // ... check for a space before newline.
+                if (pos3 > nl2)
+                {
+                    pos3 = qfile.indexOf('\r', pos1 + 1);  // ... confirm end of line.
+                    if (pos3 > nl2)
+                    {
+                        err8("pos error in extract_classic_rows");
+                    }
+                }
+                temp1 = qfile.mid(pos1 + 1, pos3 - pos1 - 1);
+                rows[row_index].append(temp1);
+            }
+            else
+            {
+                temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
+                rows[row_index].append(temp1);
+            }
+        } while (pos2 < nl2);  // All strings after the first are values, in string form.
+
+        nl1 = nl2;
+        nl2 = qfile.indexOf('\n', nl1 + 1);
+    }
+    return rows;
+}
