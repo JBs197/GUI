@@ -13,7 +13,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->progressBar->setValue(0);
 
     db = QSqlDatabase::addDatabase("QSQLITE");
-    db.setDatabaseName("F:\\SCDA.db");  // NOTE: REMOVE HARDCODING LATER
+    db.setDatabaseName(db_qpath);
     if (!db.open()) { sqlerr("db.open, in MainWindow constructor", db.lastError()); }
 
     clear_log();
@@ -107,6 +107,40 @@ void MainWindow::clear_log()
     if (!CloseHandle(hprinter)) { warn(L"CloseHandle-refresh_log"); }
 }
 
+// Progress bar related functions.
+void MainWindow::update_bar()
+{
+    if (jobs_max >= 0 && jobs_done >= 0)
+    {
+        QMutexLocker lock(&m_bar);
+        jobs_done++;
+        jobs_percent = 100 * jobs_done / jobs_max;
+        ui->progressBar->setValue(jobs_percent);
+    }
+    else
+    {
+        warn(L"Tried to update the progress bar before resetting it.");
+    }
+}
+void MainWindow::reset_bar(int max)
+{
+    QMutexLocker lock(&m_bar);
+    jobs_done = 0;
+    jobs_max = max;
+    ui->progressBar->setValue(0);
+}
+
+// Close the db object, delete the db file, remake the db file with no data inside.
+void MainWindow::reset_db(QString& db_path)
+{
+    db.close();
+    db.removeDatabase("qt_sql_default_connection");
+    delete_file(db_path.toStdWString());
+    db = QSqlDatabase::addDatabase("QSQLITE");
+    db.setDatabaseName(db_path);
+    if (!db.open()) { sqlerr("db.open-mainwindow.reset_db", db.lastError()); }
+}
+
 void MainWindow::build_ui_tree(QVector<QVector<QString>>& qtree)
 {
     QVector<QTreeWidgetItem*> qroots;
@@ -116,6 +150,9 @@ void MainWindow::build_ui_tree(QVector<QVector<QString>>& qtree)
         item = new QTreeWidgetItem(ui->tW_cata);
         item->setText(0, qtree[ii][0]);
         item->setText(1, " ");
+        auto item_flags = item->flags();
+        item_flags.setFlag(Qt::ItemIsSelectable, false);
+        item->setFlags(item_flags);
         qroots.append(item);
         add_children(item, qtree[ii]);
     }
@@ -136,69 +173,20 @@ void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
     parent->addChildren(branch);
 }
 
-void MainWindow::populate_cata_tables(int cata_index)
+/*
+void MainWindow::populate_cata(int cata_index)
 {
+    QVector<QVector<QVector<int>>> tree = binder[cata_index].get_tree();
+    QVector<QString> gid_list = binder[cata_index].get_gid_list();
+    int workload = gid_list.size() / cores;
+    int bot = 0;
+    int top = workload - 1;
 
-}
-
-int MainWindow::insert_cata_tables(QString& qpath)
-{
-    QElapsedTimer timer;
-    timer.start();
-    CATALOGUE cata;
-    cata.set_path(qpath);
-    cata.initialize_table();
-    qDebug() << "Initialize cata: " << timer.restart();
-    QVector<QVector<QString>> noble_statements = cata.get_nobles();
-    qDebug() << "Get nobles: " << timer.restart();
-    nobles_st(noble_statements);
-    qDebug() << "Insert nobles: " << timer.restart();
-    subtables_mt(cata);
-    qDebug() << "Insert subtables, MT: " << timer.restart();
-
-    int index = (int)binder.size();
-    binder.push_back(cata);
-    return index;
-}
-
-void MainWindow::subtables_st(CATALOGUE& cat)
-{
-    QVector<QVector<QVector<int>>> tree = cat.get_tree();
-    QVector<QString> gid_list = cat.get_gid_list();
-    QString sub_template = cat.get_create_sub_template();
-    QString stmt, name;
-    int pos1;
-    for (int ii = 0; ii < gid_list.size(); ii++)
-    {
-        for (int jj = 0; jj < tree.size(); jj++)
-        {
-            name = cat.sublabelmaker(gid_list[ii], tree[jj]);
-            stmt = sub_template;
-            pos1 = stmt.indexOf("!!!");
-            stmt.replace(pos1, 3, name);
-
-            m_executor.lockForWrite();
-            QSqlError qerror = executor(stmt);
-            m_executor.unlock();
-            if (qerror.isValid())
-            {
-                sqlerr("mainwindow.subtables_st for " + name, qerror);
-            }
-        }
-    }
-}
-
-void MainWindow::subtables_mt(CATALOGUE& cat)
-{
-    QVector<QVector<QVector<int>>> tree = cat.get_tree();
-    QVector<QString> gid_list = cat.get_gid_list();
-    QString sub_template = cat.get_create_sub_template();
-    QString qname = cat.get_qname();
-
-    auto insert_subtable_gid = [=] (int bot, int top)  // Interval is inclusive.
+    auto insert_csv_values = [=] (int bot, int top)  // Interval is inclusive.
     {
         QString name, stmt, temp;
         int pos1, ancestry, cheddar;
+        UINT message;
         for (int ii = bot; ii <= top; ii++)
         {
             for (int jj = 0; jj < tree.size(); jj++)
@@ -229,46 +217,212 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
                     sqlerr("mainwindow.subtables_mt for " + name, qerror);
                 }
             }
+            message = WM_APP + ii;
+            if (!PostThreadMessageW(compass, message, 0, 0))
+            {
+                winwarn(L"subtables_mt");
+            }
         }
     };
 
-    QList<QFuture<void>> bag_of_nothing;
-    int workload = gid_list.size() / cores;
-    int bot = 0;
-    int top = workload - 1;
     for (int ii = 0; ii < cores; ii++)
     {
         if (ii < cores - 1)
         {
-            bag_of_nothing.append(QtConcurrent::task(std::move(insert_subtable_gid))
-                    .withArguments(bot, top)
-                    .spawn() );
+            std::thread thr(insert_subtable_gid, bot, top);
+            tapestry.push_back(std::move(thr));
             bot += workload;
             top += workload;
         }
         else
         {
-            bag_of_nothing.append(QtConcurrent::task(std::move(insert_subtable_gid))
-                    .withArguments(bot, gid_list.size() - 1)
-                    .spawn() );
+            std::thread thr(insert_subtable_gid, bot, gid_list.size() - 1);
+            tapestry.push_back(std::move(thr));
         }
     }
-    QThread::msleep(5);
-    bool jobsdone = 0;
-    int tally;
-    while (!jobsdone)
+    while (jobs_done < jobs_max)
     {
-        QThread::msleep(5);
-        tally = 0;
-        for (int ii = 0; ii < cores; ii++)
+        aol = PeekMessageW(mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
+        if (aol)
         {
-            tally += bag_of_nothing[ii].isFinished();
+            enigma = mailbox->message;
+            enigma -= WM_APP;
+            qDebug() << "Received message: " << enigma;
+            update_bar();
         }
-        if (tally >= cores)
+        QCoreApplication::processEvents();
+    }    for (auto& th : tapestry)
+    {
+        if (th.joinable())
         {
-            jobsdone = 1;
+            th.join();
         }
     }
+    delete mailbox;
+    logger("Inserted all tables for catalogue " + cat.get_qname());
+}
+*/
+
+void MainWindow::benchmark1(QString& cata_path)
+{
+    QElapsedTimer timer;
+    timer.start();
+    CATALOGUE cata;
+    cata.set_path(cata_path);
+    cata.initialize_table();
+    qDebug() << "Initialize cata: " << timer.restart();
+    QVector<QVector<QString>> noble_statements = cata.get_nobles();
+    qDebug() << "Get nobles: " << timer.restart();
+    nobles_st(noble_statements);
+    qDebug() << "Insert nobles: " << timer.restart();
+
+    reset_db(db_qpath);
+    subtables_mt(cata);
+    qDebug() << "Insert subtables, MTnoqt: " << timer.restart();
+
+
+}
+
+int MainWindow::insert_cata_tables(QString& cata_path)
+{
+    CATALOGUE cata;
+    cata.set_path(cata_path);
+    cata.initialize_table();
+    QVector<QVector<QString>> noble_statements = cata.get_nobles();
+    nobles_st(noble_statements);
+    subtables_mt(cata);
+    int index = (int)binder.size();
+    binder.push_back(cata);
+    return index;
+}
+
+void MainWindow::subtables_st(CATALOGUE& cat)
+{
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString stmt, name;
+    int pos1;
+    int num_gid = gid_list.size();
+    reset_bar(num_gid);
+    for (int ii = 0; ii < num_gid; ii++)
+    {
+        for (int jj = 0; jj < tree.size(); jj++)
+        {
+            name = cat.sublabelmaker(gid_list[ii], tree[jj]);
+            stmt = sub_template;
+            pos1 = stmt.indexOf("!!!");
+            stmt.replace(pos1, 3, name);
+
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                sqlerr("mainwindow.subtables_st for " + name, qerror);
+            }
+        }
+        update_bar();
+    }
+}
+
+void MainWindow::subtables_mt(CATALOGUE& cat)
+{
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString qname = cat.get_qname();
+    DWORD compass = GetCurrentThreadId();
+    LPMSG mailbox = new MSG;
+    int num_gid = gid_list.size();
+    reset_bar(num_gid);
+
+    auto insert_subtable_gid = [=] (int bot, int top)  // Interval is inclusive.
+    {
+        QString name, stmt, temp;
+        int pos1, ancestry, cheddar;
+        UINT message;
+        QElapsedTimer timer;
+        timer.start();
+        for (int ii = bot; ii <= top; ii++)
+        {
+            for (int jj = 0; jj < tree.size(); jj++)
+            {
+                name = "T" + qname + "$" + gid_list[ii];
+                ancestry = tree[jj][0].size();
+                cheddar = 2;
+                for (int ii = 0; ii < ancestry; ii++)
+                {
+                    for (int jj = 0; jj < cheddar; jj++)
+                    {
+                        name += "$";
+                    }
+                    cheddar++;
+                    temp = QString::number(tree[jj][0][ii]);
+                    name += temp;
+                }
+
+                stmt = sub_template;
+                pos1 = stmt.indexOf("!!!");
+                stmt.replace(pos1, 3, name);
+
+                m_executor.lockForWrite();
+                QSqlError qerror = executor(stmt);
+                m_executor.unlock();
+                if (qerror.isValid())
+                {
+                    sqlerr("mainwindow.subtables_mt for " + name, qerror);
+                }
+            }
+            message = WM_APP + ii;
+            if (!PostThreadMessageW(compass, message, 0, 0))
+            {
+                winwarn(L"subtables_mt");
+            }
+        }
+    };
+
+    vector<std::thread> tapestry;
+    int workload = gid_list.size() / cores;
+    int bot = 0;
+    int top = workload - 1;
+    bool aol = 0;
+    int enigma;
+    for (int ii = 0; ii < cores; ii++)
+    {
+        if (ii < cores - 1)
+        {
+            std::thread thr(insert_subtable_gid, bot, top);
+            tapestry.push_back(std::move(thr));
+            bot += workload;
+            top += workload;
+        }
+        else
+        {
+            std::thread thr(insert_subtable_gid, bot, gid_list.size() - 1);
+            tapestry.push_back(std::move(thr));
+        }
+    }
+    while (jobs_done < jobs_max)
+    {
+        aol = PeekMessageW(mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
+        if (aol)
+        {
+            enigma = mailbox->message;
+            enigma -= WM_APP;
+            qDebug() << "Received message: " << enigma;
+            update_bar();
+        }
+        QCoreApplication::processEvents();
+    }    for (auto& th : tapestry)
+    {
+        if (th.joinable())
+        {
+            th.join();
+        }
+    }
+    delete mailbox;
+    logger("Inserted all tables for catalogue " + cat.get_qname());
 }
 
 void MainWindow::subtables_mapped(CATALOGUE& cat)
@@ -277,11 +431,16 @@ void MainWindow::subtables_mapped(CATALOGUE& cat)
     QVector<QString> gid_list = cat.get_gid_list();
     QString sub_template = cat.get_create_sub_template();
     QString qname = cat.get_qname();
+    DWORD compass = GetCurrentThreadId();
+    LPMSG mailbox = new MSG;
+    int num_gid = gid_list.size();
+    reset_bar(num_gid);
 
     auto insert_subtable = [=] (QString gid)
     {
         QString name, stmt, temp;
         int pos1, ancestry, cheddar;
+        UINT message;
         for (int jj = 0; jj < tree.size(); jj++)
         {
             name = "T" + qname + "$" + gid;
@@ -310,11 +469,30 @@ void MainWindow::subtables_mapped(CATALOGUE& cat)
                 sqlerr("mainwindow.subtables_mapped for " + name, qerror);
             }
         }
+        pos1 = gid.toInt();
+        pos1 -= 1375000;
+        message = WM_APP + pos1;
+        if (!PostThreadMessageW(compass, message, 0, 0))
+        {
+            winwarn(L"subtables_mt");
+        }
     };
 
     QFuture<void> bit_of_nothing = QtConcurrent::map(gid_list, insert_subtable);
-    QThread::msleep(5);
-    bit_of_nothing.waitForFinished();
+    int enigma;
+    bool aol = 0;
+    while (!bit_of_nothing.isFinished())
+    {
+        QThread::msleep(100);
+        aol = PeekMessageW(mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
+        if (aol)
+        {
+            enigma = mailbox->message;
+            enigma -= WM_APP;
+            qDebug() << "Received message: " << enigma;
+            update_bar();
+        }
+    }
 }
 
 void MainWindow::nobles_st(QVector<QVector<QString>>& stmts)
@@ -332,31 +510,9 @@ void MainWindow::nobles_st(QVector<QVector<QString>>& stmts)
     logger(stmts[0][1] + " and CSV nobles were inserted into the database.");
 }
 
-void MainWindow::insert_tables(QVector<QString>& stmts, QString qname)
+void MainWindow::insert_csv_values(CATALOGUE& cat)
 {
-    for (int ii = 0; ii < stmts.size(); ii++)
-    {
-        m_executor.lockForWrite();
-        QSqlError qerror = executor(stmts[ii]);
-        m_executor.unlock();
-        if (qerror.isValid())
-        {
-            sqlerr("mainwindow.insert_tables for " + qname, qerror);
-        }
-    }
-    logger(qname + " was inserted into the database.");
-}
 
-void MainWindow::insert_csv(QString& stmt, QString& csv_branch)
-{
-    m_executor.lockForWrite();
-    QSqlError qerror = executor(stmt);
-    m_executor.unlock();
-    if (qerror.isValid())
-    {
-        sqlerr("mainwindow.insert_csv in " + csv_branch, qerror);
-    }
-    logger(csv_branch + " was inserted into the database.");
 }
 
 QSqlError MainWindow::executor(QString& stmt)
@@ -413,30 +569,28 @@ void MainWindow::on_pB_insert_clicked()
     QString qyear = catas_to_do[0]->text(0);
     QString qcata = catas_to_do[0]->text(1);
     QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
-    //int cata_index = build_table(cata_path);
+    int cata_index = insert_cata_tables(cata_path);
     //log8(qcata.toStdString() + " was assigned binder index " + to_string(cata_index));
     //populate_table(cata_index);
 
-    /*
-    qDebug() << "Button was clicked in " << QThread::currentThread();
-    THREADING rocinante;
-    connect(this, &MainWindow::begin_working, &rocinante, &THREADING::work_order);
-    connect(&rocinante, &THREADING::jobsdone, this, &MainWindow::feedback);
-    QFuture<void> future = QtConcurrent::run(&THREADING::begin, &rocinante);
-    */
 }
 
 void MainWindow::on_pB_test_clicked()
 {
     QList<QTreeWidgetItem *> catas_to_do = ui->tW_cata->selectedItems();
-    QString qyear = catas_to_do[0]->text(0);
-    QString qcata = catas_to_do[0]->text(1);
-    QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
-    int cata_index = insert_cata_tables(cata_path);
-    //populate_cata_tables(cata_index);
+    auto bbq = catas_to_do[0]->flags();
+    qDebug() << "Flags before: " << bbq;
+    bbq.setFlag(Qt::ItemIsSelectable, false);
+    catas_to_do[0]->setFlags(bbq);
+    qDebug() << "Flags after: " << bbq;
 }
 
-void MainWindow::on_progressBar_valueChanged(int value)
+// Runs different versions of application functions and reports their respective running times.
+// Currently testing singlethreaded, multithreaded, and Qt functions on a dummy catalogue containing 100 CSV files.
+void MainWindow::on_pB_benchmark_clicked()
 {
-
+    wdrive = L"F:";
+    qdrive = "F:";
+    QString cata_path = "F:\\3067\\97-570-X1981005";
+    benchmark1(cata_path);
 }

@@ -5,7 +5,6 @@
 #include <QTreeWidgetItem>
 #include <QtSql>
 #include "catalogue.h"
-#include "basictools.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -21,12 +20,12 @@ public:
     QSqlDatabase db;
     void sqlerr(QString, QSqlError);
     void logger(QString);
-    void insert_csv(QString&, QString&);
-    void insert_tables(QVector<QString>&, QString);
 
 signals:
+    //void report_progress(int);
 
 public slots:
+    //void receive_progress(int);
 
 private slots:
 
@@ -38,28 +37,39 @@ private slots:
 
     void on_pB_test_clicked();
 
-    void on_progressBar_valueChanged(int value);
+    void on_pB_benchmark_clicked();
 
 private:
     Ui::MainWindow *ui;
     int cores = 3;
+    int bar_threads;
+    int jobs_max;
+    int jobs_done;
+    int jobs_percent;
     std::wstring wdrive;
     QString qdrive;
     QReadWriteLock m_executor;
-    QMutex m_err, m_log;
+    QMutex m_err, m_log, m_bar;
+    int max_progress;
     wstring root_directory = L"F:";  // NOTE: REMOVE HARDCODING LATER
+    QString db_qpath = "F:\\SCDA.db";
     void build_ui_tree(QVector<QVector<QString>>&);
     void add_children(QTreeWidgetItem*, QVector<QString>&);
     QSqlError executor(QString&);
     int insert_cata_tables(QString&);
+    void insert_csv_values(CATALOGUE&);
     void clear_log();
+    void reset_db(QString&);
+    void update_bar();
+    void reset_bar(int);
     std::vector<CATALOGUE> binder;
     QString sqlerr_enum(QSqlError::ErrorType);
     void nobles_st(QVector<QVector<QString>>&);
     void subtables_st(CATALOGUE&);
     void subtables_mt(CATALOGUE&);
     void subtables_mapped(CATALOGUE&);
-    void populate_cata_tables(int);
+    void populate_cata(int);
+    void benchmark1(QString&);
 };
 
 #endif // MAINWINDOW_H

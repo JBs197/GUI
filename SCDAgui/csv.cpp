@@ -10,10 +10,8 @@ void CSV::scan(QString& qf, QString& qn)
     unique_row_buffer.append("");
     int pos0 = extract_variables();
     int pos1 = extract_column_titles(pos0);
-    extract_rows(pos1);
-    extract_classic_rows(pos1);
-    last_classic_row = row_titles.size() - 1;
-    organize_subtables(pos1);
+    extract_model_rows(pos1);
+    tree_walker();
 }
 
 void CSV::set_gid(QString& gd)
@@ -22,17 +20,79 @@ void CSV::set_gid(QString& gd)
 }
 
 // Find all possible subtrees for this CSV. Children have uniform indentation.
-// Form [possibility index][parent genealogy, children][list of parents / list of children]
+// Form [possibility index][index of progenitor, then descendents][list of children]
 void CSV::tree_walker()
 {
     int indentation = 0;
     int start_index = 0;
+    int indent_index;
     QVector<int> genealogy;
+    QVector<QVector<int>> pidgeonhole;  // Form [indentation][row_index]
 
-    for (int ii = 0; ii < subtables[0].size(); ii++)  // For every parentless parent...
+    // Firstly, categorize each data row by its indentation, while keeping order.
+    for (int ii = 0; ii < model_rows.size(); ii++)
     {
-        genealogy = { subtables[0][ii][0] };
-        start_index = is_parent(tree, genealogy, indentation, start_index);
+        indent_index = 0;
+        while (model_rows[ii][0][indent_index] == '+') // Determine this data row's indentation.
+        {
+            indent_index++;
+        }
+        while (pidgeonhole.size() <= indent_index)  // If space is lacking in pidgeonhole, make more space.
+        {
+            pidgeonhole.append(QVector<int>());
+        }
+        pidgeonhole[indent_index].append(ii);
+    }
+
+    // Secondly, create lists of all parents and their direct children.
+    QVector<QVector<QVector<int>>> subtables;  // Form [indentation][subtable_index][subtable_rows]
+    subtables.resize(pidgeonhole.size() - 1);
+    QVector<int> temp;
+    int bot, top, child;
+    int save_point = 0;
+    for (int ii = 0; ii < subtables.size(); ii++)
+    {
+        save_point = 0;
+        for (int jj = 0; jj < pidgeonhole[ii].size(); jj++)
+        {
+            if (jj == pidgeonhole[ii].size() - 1)  // Define min/max boundaries inside of which
+            {                                      // we will look for children.
+                top = model_rows.size() - 1;
+                bot = pidgeonhole[ii][jj];
+            }
+            else
+            {
+                top = pidgeonhole[ii][jj + 1];
+                bot = pidgeonhole[ii][jj];
+            }
+
+            temp.clear();
+            temp.append(bot);  // The first integer of the vector is the parent's row index.
+            for (int kk = save_point; kk < pidgeonhole[ii + 1].size(); kk++)
+            {
+                child = pidgeonhole[ii + 1][kk];
+                if (child > bot && child <= top)  // Every child's parent is the largest row index
+                {                                 // from the previous indentation's list, without
+                    temp.append(child);           // exceeding the child's row index.
+                }
+                else if (child > top)
+                {
+                    save_point = kk;  // This is the first child index that was too large.
+                    break;            // The next parental candidate can start here. Go go efficiency.
+                }
+            }
+            if (temp.size() > 1)  // A row is added to the list of parents if it has at least one child.
+            {
+                subtables[ii].append(temp);
+            }
+        }
+    }
+
+    // Thirdly, create lists of all possible family trees, from first to last generation. Save to the model's tree.
+    for (int ii = 0; ii < subtables[0].size(); ii++)  // For every parentless parent, begin a new family line.
+    {
+        genealogy = { subtables[0][ii][0] };                                 // Travel through the tree, and record
+        start_index = is_parent(subtables, genealogy, indentation, start_index);  // the genealogy of every parent.
     }
 }
 
@@ -76,7 +136,7 @@ QVector<QVector<QVector<int>>> CSV::get_model_tree()
 
 // Recursively determine if the given row is a parent. If so, add it to the tree and do the same for all
 // its children. Returns first yet-to-be checked index in the current indentation's subtable list.
-int CSV::is_parent(QVector<QVector<QVector<int>>>& tree, QVector<int> genealogy, int indentation, int start_index)
+int CSV::is_parent(QVector<QVector<QVector<int>>>& subtables, QVector<int> genealogy, int indentation, int start_index)
 {
     int row = genealogy[genealogy.size() - 1];  // Current candidate for parenthood.
     QVector<int> new_genealogy;
@@ -176,41 +236,9 @@ int CSV::extract_column_titles(int pos0)
     return nl2;
 }
 
-// Populate the CSV object with the CSV file's row titles, storing subtables (but not columns).
-void CSV::extract_rows(int pos0)
-{
-    vector<int> space_index = { 0 };
-    int indentation = 0;
-    vector<int> family_line = { 0 };
-    size_t pos1, pos2, nl1, nl2;
-    int spaces;
-    QString temp1, temp2, val;
-    string exception;
-
-    nl1 = pos0;
-    nl2 = qfile.indexOf('\n', nl1 + 1);
-    do
-    {
-        pos1 = qfile.indexOf('"', nl1);
-        pos2 = qfile.indexOf('"', pos1 + 1);
-        temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
-        spaces = qclean(temp1, 0);
-        if (temp1 == "Note") { break; }  // Primary exit from the loop.
-        indentation = index_card(space_index, spaces);
-        if (indentation < 0) { err(L"index_card-csv.extract_rows"); }
-
-        temp2.clear();
-        for (int ii = 0; ii < indentation; ii++)
-        {
-            temp2.push_back('+');
-        }
-        row_titles.append(temp2 + temp1);
-
-        nl1 = nl2;
-        nl2 = qfile.indexOf('\n', nl1 + 1);
-    } while (nl2 > 0);  // Secondary exit from the loop.
-}
-void CSV::extract_classic_rows(int pos0)
+// Populate the CSV object with the model CSV file's row titles and row values.
+// Also, populate the 'is_int' vector for this catalogue, so that 'is_int' and 'model_rows' share indices.
+void CSV::extract_model_rows(int pos0)
 {
     vector<int> space_index = { 0 };
     int indentation = 0;
@@ -224,15 +252,15 @@ void CSV::extract_classic_rows(int pos0)
     nl2 = qfile.indexOf('\n', nl1 + 1);
     do
     {
-        classic_rows.append(QVector<QString>());
-        row_index = classic_rows.size() - 1;
+        model_rows.append(QVector<QString>());
+        row_index = model_rows.size() - 1;
         pos1 = qfile.indexOf('"', nl1);
         pos2 = qfile.indexOf('"', pos1 + 1);
         temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
         spaces = qclean(temp1, 0);
         if (temp1 == "Note") { break; }  // Primary exit from the loop.
         indentation = index_card(space_index, spaces);
-        if (indentation < 0) { err(L"index_card-csv.extract_classic_rows"); }
+        if (indentation < 0) { err(L"index_card-csv.extract_model_rows"); }
 
         temp2.clear();
         for (int ii = 0; ii < indentation; ii++)
@@ -240,35 +268,35 @@ void CSV::extract_classic_rows(int pos0)
             temp2.push_back('+');
         }
         temp2 += temp1;
-        classic_rows[row_index].append(temp2);  // First string is the row title.
+        model_rows[row_index].append(temp2);  // First string is the row title.
 
         pos2 = qfile.indexOf(',', pos2);
         do
         {
             pos1 = pos2;
             pos2 = qfile.indexOf(',', pos1 + 1);
-            if (pos2 > nl2)
+            if (pos2 > nl2)  // If we have reached the last value on this line...
             {
-                pos3 = qfile.indexOf(' ', pos1 + 1);
+                pos3 = qfile.indexOf(' ', pos1 + 1);  // ... check for a space before newline.
                 if (pos3 > nl2)
                 {
-                    pos3 = qfile.indexOf('\r', pos1 + 1);
+                    pos3 = qfile.indexOf('\r', pos1 + 1);  // ... confirm end of line.
                     if (pos3 > nl2)
                     {
                         err8("pos error in extract_classic_rows");
                     }
                 }
                 temp1 = qfile.mid(pos1 + 1, pos3 - pos1 - 1);
-                classic_rows[row_index].append(temp1);  // All strings after the first are values, in string form.
+                model_rows[row_index].append(temp1);
             }
             else
             {
                 temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
-                classic_rows[row_index].append(temp1);  // All strings after the first are values, in string form.
+                model_rows[row_index].append(temp1);
             }
-        } while (pos2 < nl2);
+        } while (pos2 < nl2);  // All strings after the first are values, in string form.
 
-        classic_is_int.append(qnum_test(temp1));  // Index is identical to 'classic_rows'.
+        model_is_int.append(qnum_test(temp1));  // Index is identical to 'model_rows'.
 
         nl1 = nl2;
         nl2 = qfile.indexOf('\n', nl1 + 1);
@@ -277,10 +305,10 @@ void CSV::extract_classic_rows(int pos0)
 
 // For a given row (with values), return a unique row name by front-pushing the child's genealogy.
 // Uses a persistent buffer in the CSV object. Remember to clear it when done!
-QString CSV::unique_row_title(int row)
+QString CSV::unique_row_title(int row_index)
 {
     int current_indent = unique_row_buffer.size() - 1;
-    QString terminal = row_titles[row];
+    QString terminal = model_rows[row_index][0];
     int new_indent = 0;
     int pos1 = 0;
     while (terminal[pos1] == '+')
@@ -318,6 +346,55 @@ QString CSV::unique_row_title(int row)
             unique += " ";
         }
     }
+    return unique;
+}
+QString CSV::unique_row_title_multicol(int row_index, int& highest_indent)
+{
+    int current_indent = unique_row_buffer.size() - 1;
+    QString terminal = model_rows[row_index][0];
+    int new_indent = 0;
+    int pos1 = 0;
+    int max_indent = 0;
+    while (terminal[pos1] == '+')
+    {
+        pos1++;
+        new_indent++;
+    }
+
+    if (new_indent == current_indent)
+    {
+        unique_row_buffer[current_indent] = terminal;
+    }
+    else if (new_indent > current_indent)
+    {
+        unique_row_buffer.append(terminal);
+    }
+    else
+    {
+        pos1 = current_indent - new_indent;
+        unique_row_buffer.remove(unique_row_buffer.size() - pos1, pos1);
+        unique_row_buffer[new_indent] = terminal;
+    }
+
+    QString unique;
+    for (int ii = 0; ii <= new_indent; ii++)
+    {
+        unique += unique_row_buffer[ii];
+        if (ii < new_indent)
+        {
+            unique += " ";
+            for (int jj = 1; jj <= ii + 1; jj++)
+            {
+                unique += "$";
+                if (jj > max_indent)
+                {
+                    max_indent = jj;
+                }
+            }
+            unique += " ";
+        }
+    }
+    highest_indent = max_indent;
     return unique;
 }
 
@@ -376,157 +453,11 @@ void CSV::extract_row_values(int& pos0, QVector<QString>& values, QVector<int>& 
     pos0 = nl;
 }
 
-// Use the CSV object's stored data to build a tree structure of row indices. Also, populate values.
-void CSV::organize_subtables(int pos0)
-{
-    QString row;
-    int pos, indentation;
-    QVector<QVector<int>> pidgeonhole;  // Form [indentation][row_titles index]
-    if (multi_column)
-    {
-        indent.resize(row_titles.size());
-        for (int ii = 0; ii < row_titles.size(); ii++)
-        {
-            row = row_titles[ii];
-            pos = 0;
-            indentation = 0;
-            while (row[pos] == '+')                                   // The number of '+' signs for a given
-            {                                                         // row title tells us that row's rank
-                pos++;                                                // within the catalogue hierarchy.
-                indentation++;
-            }
-            indent[ii] = indentation;
-            while (indentation >= pidgeonhole.size())                 // We create a 2D vector which categorizes
-            {                                                         // each table row by its rank (steps
-                pidgeonhole.append(QVector<int>());                   // removed from the tree's root).
-            }
-
-            pidgeonhole[indentation].append(ii);
-        }
-    }
-    else
-    {
-        for (int ii = 0; ii < row_titles.size(); ii++)
-        {
-            row = row_titles[ii];
-            pos = 0;
-            indentation = 0;
-            while (row[pos] == '+')                                   // The number of '+' signs for a given
-            {                                                         // row title tells us that row's rank
-                pos++;                                                // within the catalogue hierarchy.
-                indentation++;
-            }
-
-            while (indentation >= pidgeonhole.size())                 // We create a 2D vector which categorizes
-            {                                                         // each table row by its rank (steps
-                pidgeonhole.append(QVector<int>());                   // removed from the tree's root).
-            }
-
-            pidgeonhole[indentation].append(ii);
-        }
-    }
-
-
-    int top, bot, mid;
-    QVector<int> temp;
-    subtables.resize(pidgeonhole.size() - 1);                     // Subtables is always one row smaller than
-    for (int ii = 0; ii < subtables.size(); ii++)                 // pidgeonhole, because the group of rows
-    {                                                             // which is furthest removed from the tree's
-        for (int jj = 0; jj < pidgeonhole[ii].size(); jj++)       // root cannot possibly have their own
-        {                                                         // subordinate rows.
-            if (jj == pidgeonhole[ii].size() - 1)
-            {
-                top = row_titles.size() - 1;
-                bot = pidgeonhole[ii][jj];
-            }
-            else
-            {
-                top = pidgeonhole[ii][jj + 1];
-                bot = pidgeonhole[ii][jj];
-            }
-            temp.clear();
-            temp.append(bot);                                        // NOTE: The first integer in every
-            for (int kk = 0; kk < pidgeonhole[ii + 1].size(); kk++)  // "subtables" 1D vector is the immediate
-            {                                                        // parent row index.
-                mid = pidgeonhole[ii + 1][kk];
-                if (mid > bot && mid <= top)
-                {
-                    temp.append(mid);
-                }
-                else if (mid > top) { break; }
-            }
-            if (temp.size() > 1)
-            {
-                subtables[ii].append(temp);
-            }
-        }
-    }
-
-    QString colrow, colrowbase;
-    int orig_size = row_titles.size();
-    int baserow;
-    QVector<QString> lvalues(column_titles.size());
-    QVector<int> lis_int(column_titles.size());
-    QVector<int> ltemp(3);
-    pos = pos0;
-    if (multi_column)
-    {
-        subtables.append(QVector<QVector<int>>());  // The columns will add one hierarchy layer everywhere.
-        for (int ii = 0; ii < orig_size; ii++)  // For every data row with values...
-        {
-            colrowbase.clear();
-            for (int jj = 0; jj <= indent[ii]; jj++)
-            {
-                colrowbase.append('+');
-            }
-
-            extract_row_values(pos, lvalues, lis_int);  // ... read qfile to pull this row's data.
-
-            temp.clear();
-            temp.append(ii);  // Parent row index.
-            baserow = row_titles.size();
-            for (int jj = 0; jj < column_titles.size(); jj++)  // For every column in the 2D CSV...
-            {
-                colrow = colrowbase + column_titles[jj];  // ... make a new row title with indentation.
-                row_titles.append(colrow);  // ... insert the new row title beneath the existing titles.
-                row_values.append(lvalues[jj]);  // ... load that column's value into the object.
-                map_values.insert(baserow + jj, row_values[row_values.size() - 1]);
-                ltemp[0] = baserow + jj;  // New row's index inside row_titles.
-                ltemp[1] = lis_int[jj];  // New row's "is int" status (1=int, 0=double, -1=missing).
-                ltemp[2] = row_values.size() - 1;  // New row's index inside row_values.
-                is_int.append(ltemp);
-                map_isint.insert(baserow + jj, is_int[is_int.size() - 1][1]);
-                temp.append(ltemp[0]);  // Child row index.
-            }
-
-            subtables[indent[ii]].append(temp);
-        }
-    }
-    else
-    {
-        column_titles.resize(2);
-        column_titles[0] = "Description";  // These are inserted to avoid SQL problems.
-        column_titles[1] = "Values";
-
-        for (int ii = 0; ii < orig_size; ii++)          // For every data row with values...
-        {
-            extract_row_values(pos, lvalues, lis_int);  // ... read qfile to pull this row's data.
-
-            row_values.append(lvalues[0]);
-            map_values.insert(ii, row_values[row_values.size() - 1]);
-            ltemp[0] = ii;
-            ltemp[1] = lis_int[0];
-            ltemp[2] = row_values.size() - 1;
-            is_int.append(ltemp);
-            map_isint.insert(ii, is_int[is_int.size() - 1][1]);
-        }
-    }
-}
-
 // Build a SQL statement to create the primary table, which encompasses the whole catalogue.
 void CSV::create_table_cata(QVector<QVector<QString>>& work)
 {
-    int row;
+    int row, base_indent;
+    QString base, temp;
     QString sql = "CREATE TABLE IF NOT EXISTS \"T" + qname + "\" ( GID INTEGER PRIMARY KEY, ";
     for (int ii = 0; ii < text_variables.size(); ii++)
     {
@@ -534,15 +465,41 @@ void CSV::create_table_cata(QVector<QVector<QString>>& work)
         sql += text_variables[ii][0];
         sql += "\" TEXT, ";
     }
-    for (int ii = 0; ii < is_int.size(); ii++)
+
+    unique_row_buffer.clear();
+    if (multi_column)  // Multi-column spreadsheets must be crushed into 1D vectors.
     {
-        row = is_int[ii][0];
-        sql += "\"";
-        sql += unique_row_title(row);
-        if (is_int[ii][1] == 1) { sql += "\" INTEGER, "; }
-        else if (is_int[ii][1] == 0) { sql += "\" REAL, "; }
-        else { err8("Missing is_int values-csv.create_table_cata"); }
+        for (int ii = 0; ii < model_rows.size(); ii++)
+        {
+            base = unique_row_title_multicol(ii, base_indent);
+            for (int jj = 1; jj < column_titles.size(); jj++)
+            {
+                temp = base;
+                temp += " ";
+                for (int kk = 0; kk <= base_indent; kk++)
+                {
+                    temp += "$";
+                }
+                temp += " ";
+                temp += column_titles[jj];
+
+                sql += "\"";
+                sql += temp;
+                sql += "\" NUMERIC, ";
+            }
+        }
     }
+    else
+    {
+        for (int ii = 0; ii < model_rows.size(); ii++)
+        {
+            temp = unique_row_title(ii);
+            sql += "\"";
+            sql += temp;
+            sql += "\" NUMERIC, ";
+        }
+    }
+
     sql.remove(sql.size() - 2, 2);
     sql.append(" );");
     work.append(QVector<QString>(2));
@@ -623,137 +580,44 @@ void CSV::create_sub_template(QString& work)
     work.append(" );");
 }
 
-QVector<int> CSV::insert_value_all_statements(QVector<QString>& work, QVector<QVector<QVector<int>>>& model_tree, QVector<QString>& subtable_names, QVector<QVector<QString>>& subtable_text_variables)
+// Build a SQL statement to insert a row into the (non-primary) table, with the table name missing.
+void CSV::create_row_template(QString& work)
 {
-    QVector<QVector<int>> int_double_results;
-    QVector<int> int_double_subtable_results;
-    // Do the main table first...
-    int row, sindex;
-    int icount = 0;
-    int dcount = 0;
-    QString sql = "INSERT INTO \"T" + qname + "\" ( GID, ";
+    int col_count = 0;
+    work = "INSERT INTO \"!!!\" ( ";
     for (int ii = 0; ii < text_variables.size(); ii++)
     {
-        sql += "\"";
-        sql += text_variables[ii][0];
-        sql += "\", ";
+        work += "\"";
+        work += text_variables[ii][0];
+        work += "\", ";
+        col_count++;
     }
-    for (int ii = 0; ii < is_int.size(); ii++)
+    if (multi_column)
     {
-        row = is_int[ii][0];
-        sql += "\"";
-        sql += row_titles[row];
-        sql += "\", ";
-    }
-    sql.remove(sql.size() - 2, 2);
-    sql += " ) VALUES ( ";
-    for (int ii = 0; ii < text_variables.size(); ii++)
-    {
-        sql += "\"";
-        sql += text_variables[ii][1];
-        sql += "\", ";
-    }
-    for (int ii = 0; ii < is_int.size(); ii++)
-    {
-        sindex = is_int[ii][2];
-        sql += "\"";
-        sql += row_values[sindex];
-        sql += "\", ";
-
-        if (is_int[ii][1] == 1) { icount++; }
-        else if (is_int[ii][1] == 0) { dcount++; }
-    }
-    sql.remove(sql.size() - 2, 2);
-    sql.append(" );");
-    work.append(sql);
-    int_double_results.append({ icount, dcount });
-
-    // Add INSERT statements for all subtables in this CSV.
-    int subtrees = model_tree.size();
-    for (int ii = 0; ii < subtrees; ii++)
-    {
-        int_double_subtable_results = insert_subtable_statement(work, model_tree[ii], subtable_names, subtable_text_variables);
-        int_double_results.append(int_double_subtable_results);
-    }
-
-    // Consistency check.
-    icount = int_double_results[0][0];
-    dcount = int_double_results[0][1];
-    for (int ii = 1; ii < int_double_results.size(); ii++)
-    {
-        if (int_double_results[ii][0] != icount)
+        for (int ii = 0; ii < column_titles.size(); ii++)
         {
-            err8("Inconsistent integer value counts for cata " + qname.toStdString() + ", GID " + gid.toStdString());
-        }
-        else if (int_double_results[ii][1] != dcount)
-        {
-            err8("Inconsistent double value counts for cata " + qname.toStdString() + ", GID " + gid.toStdString());
+            work += "\"";
+            work += column_titles[ii];
+            work += "\", ";
+            col_count++;
         }
     }
-
-    return int_double_results[0];
+    else
+    {
+        work += "\"Description\", ";
+        work += "\"Value\", ";
+        col_count += 2;
+    }
+    work.remove(work.size() - 2, 2);
+    work.append(" ) VALUES ( ");
+    for (int ii = 0;  ii < col_count; ii++)
+    {
+        work += "?, ";
+    }
+    work.remove(work.size() - 2, 2);
+    work.append(" )");
 }
 
-QVector<int> CSV::insert_subtable_statement(QVector<QString>& work, QVector<QVector<int>>& model_subtree, QVector<QString>& subtable_names, QVector<QVector<QString>>& subtable_text_variables)
-{
-    int tree_index = work.size() - 1;
-    int isint_index;
-    int subtable_size = subtable_text_variables.size();
-    int icount = 0;
-    int dcount = 0;
+//void CSV::insert_row_primary_table(QString& qfile, )
 
-    QString sql = "INSERT INTO \"" + subtable_names[tree_index] + "\" ( ";
-    for (int ii = 0; ii < text_variables.size(); ii++)
-    {
-        sql += "\"";
-        sql += text_variables[ii][0];
-        sql += "\", ";
-    }
-    for (int ii = 0; ii < subtable_size; ii++)
-    {
-        sql += "\"";
-        sql += subtable_text_variables[ii][0];
-        sql += "\", ";
-    }
-    int num_val_rows = model_subtree[1].size();
-    for (int ii = 0; ii < num_val_rows; ii++)
-    {
-        sql += "\"";
-        sql += row_titles[model_subtree[1][ii]];
-        sql += "\", ";
-    }
-    sql.remove(sql.size() - 2, 2);
-    sql.append(" ) VALUES ( ");
-    for (int ii = 0; ii < text_variables.size(); ii++)
-    {
-        sql += "\"";
-        sql += text_variables[ii][1];
-        sql += "\", ";
-    }
-    for (int ii = 0; ii < subtable_size; ii++)
-    {
-        sql += "\"";
-        sql += subtable_text_variables[ii][1];
-        sql += "\", ";
-    }
-    for (int ii = 0; ii < num_val_rows; ii++)
-    {
-        sql += "\"";
-        sql += map_values.value(model_subtree[1][ii]);
-        sql += "\", ";
-        isint_index = map_isint.value(model_subtree[1][ii]);
-        if (is_int[isint_index][1] == 1)
-        {
-            icount++;
-        }
-        else if (is_int[isint_index][1] == 0)
-        {
-            dcount++;
-        }
-    }
-    sql.remove(sql.size() - 2, 2);
-    sql.append(" );");
-    work.append(sql);
-    QVector<int> int_double_result = { icount, dcount };
-    return int_double_result;
-}
+

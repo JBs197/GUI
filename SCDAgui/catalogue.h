@@ -1,7 +1,6 @@
 #ifndef CATALOGUE_H
 #define CATALOGUE_H
 
-#include <windows.h>
 #include <QtSql>
 #include <QtConcurrent>
 #include "csv.h"
@@ -41,6 +40,7 @@ public:
     void create_table_mapped(QVector<QString>&);
     QVector<QVector<QString>> get_nobles();
     QString get_create_sub_template();
+    QString get_create_row_template();
     QVector<QVector<QVector<int>>> get_tree();
     QVector<QString> get_gid_list();
 };

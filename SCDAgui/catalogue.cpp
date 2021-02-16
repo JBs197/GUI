@@ -73,7 +73,6 @@ void CATALOGUE::initialize_table()
     qdescription = temp1;
 
     model.scan(qfile, qname);  // This will populate the embedded CSV object.
-    model.tree_walker();
     make_name_tree();
     model_tree = model.get_model_tree();
 
@@ -133,6 +132,12 @@ QString CATALOGUE::get_create_sub_template()
     QString sub_template;
     model.create_sub_template(sub_template);
     return sub_template;
+}
+QString CATALOGUE::get_create_row_template()
+{
+    QString row_template;
+    model.create_row_template(row_template);
+    return row_template;
 }
 
 // Returns <statement, tname> for the primary catalogue table (first index) and the CSV tables.

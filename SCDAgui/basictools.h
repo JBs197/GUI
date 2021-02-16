@@ -6,10 +6,12 @@
 #include <windows.h>
 //#include <locale>
 #include <wininet.h>
+#include <winuser.h>
 #include <thread>
 #include <QtSql>
 
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib,"user32.lib")
 using namespace std;
 
 typedef struct {
