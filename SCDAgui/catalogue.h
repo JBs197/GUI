@@ -65,7 +65,7 @@ public:
     void set_column_titles(QVector<QString>);
     QVector<QString> get_row_titles();
     void set_row_titles(QVector<QString>);
-
+    QVector<QVector<QString>> get_model_text_variables();
 };
 
 #endif // CATALOGUE_H

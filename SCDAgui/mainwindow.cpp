@@ -173,6 +173,37 @@ void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
     parent->addChildren(branch);
 }
 
+void MainWindow::update_text_vars(QVector<QVector<QString>>& text_vars, QString& qf)
+{
+    int pos1, pos2;
+    int var_index = -1;
+    QChar math;
+    QString temp1, temp2;
+    pos1 = 0;
+    pos2 = 0;
+    while (1)
+    {
+        pos1 = qf.indexOf('=', pos1 + 1);
+        if (pos1 < 0) { break; }  // Primary loop exit.
+        math = qf[pos1 - 1];
+        if (math == '<' || math == '>') { continue; }
+
+        var_index++;
+        pos2 = qf.lastIndexOf('"', pos1); pos2++;
+        temp1 = qf.mid(pos2, pos1 - pos2);
+        qclean(temp1, 0);
+        if (temp1 != text_vars[var_index][0])
+        {
+            err8("text variable type check-update_text_vars");
+        }
+
+        pos2 = qf.indexOf('"', pos1);
+        temp1 = qf.mid(pos1 + 1, pos2 - pos1 - 1);
+        qclean(temp1, 1);
+        text_vars[var_index][1] = temp1;
+    }
+}
+
 void MainWindow::populate_cata(int cata_index)
 {
     QVector<QString> gid_list = binder[cata_index].get_gid_list();
@@ -183,6 +214,7 @@ void MainWindow::populate_cata(int cata_index)
     QVector<QVector<QVector<int>>> tree = binder[cata_index].get_tree();
     QString primary_template = binder[cata_index].get_primary_columns_template();
     QString qname = binder[cata_index].get_qname();
+    QVector<QVector<QString>> text_variables = binder[cata_index].get_model_text_variables();
     bool multi_column;
     if (column_titles.size() > 2)
     {
@@ -193,25 +225,73 @@ void MainWindow::populate_cata(int cata_index)
         multi_column = 0;
     }
 
-    DWORD compass = GetCurrentThreadId();
+    int glist = binder[cata_index].get_gid_size();
+    int workload = glist / cores;
+    int bot = 0;
+    int top = workload - 1;
+    double gids_per_percent = (double)glist / 100.0;
+    reset_bar(100);
+    int report = 0;
 
-    auto populate_cata_piece = [=] (int bot, int top)  // Interval is inclusive.
+    auto populate_cata_piece = [=] (int bot, int top, int& progress)  // Interval is inclusive.
     {
         QVector<QVector<QString>> rows;
-        QString qfile;
+        QVector<QVector<QString>> my_text_vars = text_variables;
+        QString qfile, stmt;
         wstring csv_path;
         QString temp;
         bool fine;
         int inum;
         double dnum;
         UINT message;
+        double gids_done = 0.0;
+        int my_progress = 0;
+        DWORD my_thread_id = GetCurrentThreadId();
+        int pos1;
+
         for (int ii = bot; ii <= top; ii++)  // For every assigned CSV...
         {
             csv_path = csv_trunk + csv_branches[ii];
             qfile = q_memory(csv_path);
             rows = extract_csv_data_rows(qfile, row_titles, multi_column);
+            stmt = primary_template;
 
             // Insert this CSV's values into the catalogue's primary table.
+            pos1 = primary_template.lastIndexOf("VALUES");
+            pos1 = primary_template.indexOf('?', pos1);
+            temp = gid_list[ii];
+            stmt.replace(pos1, 1, temp);  // GID is always first.
+
+            update_text_vars(my_text_vars, qfile);
+            for (int jj = 0; jj < my_text_vars.size(); jj++)
+            {
+                pos1 = primary_template.indexOf('?', pos1 + 1);
+                stmt.replace(pos1, 1, my_text_vars[jj][1]);
+            }
+
+            for (int jj = 0; jj < rows.size(); jj++)
+            {
+                for (int kk = 1; kk < rows[jj].size(); kk++)
+                {
+                    stmt.replace(pos1, 1, rows[jj][kk]);
+                    pos1 = stmt.indexOf('?', pos1 + 1);
+                }
+            }
+            if (ii == 0)
+            {
+                qprinter("F:\\new_statement.txt", stmt);
+            }
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                temp = QString::fromStdWString(csv_branches[ii]);
+                sqlerr("mainwindow.populate_cata_piece for " + temp, qerror);
+            }
+
+
+            /*
             QSqlQuery primary_row(db);
             fine = primary_row.prepare(primary_template);
             if (!fine)
@@ -251,51 +331,49 @@ void MainWindow::populate_cata(int cata_index)
                 sqlerr("primary_row.exec-populate_cata_piece", primary_row.lastError());
             }
             m_executor.unlock();
+            */
 
+
+            gids_done += 1.0;
+            if (gids_done >= gids_per_percent)
+            {
+                m_bar.lock();
+                progress++;
+                m_bar.unlock();
+                my_progress++;
+                qDebug() << "Updated my progress to " << my_progress << " from " << my_thread_id;
+                gids_done -= gids_per_percent;
+            }
+            /*
             message = WM_APP + ii;
             if (!PostThreadMessageW(compass, message, 0, 0))
             {
                 winwarn(L"populate_cata_piece");
             }
+            */
         }
     };
-
-    int glist = binder[cata_index].get_gid_size();
-    int workload = glist / cores;
-    int bot = 0;
-    int top = workload - 1;
-
-    reset_bar(glist);
-    bool aol;
-    LPMSG mailbox = new MSG;
-    UINT enigma;
 
     vector<std::thread> tapestry;
     for (int ii = 0; ii < cores; ii++)
     {
         if (ii < cores - 1)
         {
-            std::thread thr(populate_cata_piece, bot, top);
+            std::thread thr(populate_cata_piece, bot, top, ref(report));
             tapestry.push_back(std::move(thr));
             bot += workload;
             top += workload;
         }
         else
         {
-            std::thread thr(populate_cata_piece, bot, glist - 1);
+            std::thread thr(populate_cata_piece, bot, glist - 1, ref(report));
             tapestry.push_back(std::move(thr));
         }
     }
-    while (jobs_done < jobs_max)
+    while (report < 100)
     {
-        aol = PeekMessageW(mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
-        if (aol)
-        {
-            enigma = mailbox->message;
-            enigma -= WM_APP;
-            qDebug() << "Received message: " << enigma;
-            update_bar();
-        }
+        jobs_done = report;
+        ui->progressBar->setValue(jobs_done);
         QCoreApplication::processEvents();
     }
     for (auto& th : tapestry)
@@ -305,7 +383,6 @@ void MainWindow::populate_cata(int cata_index)
             th.join();
         }
     }
-    delete mailbox;
     logger("Inserted all data rows for catalogue " + qname);
 }
 
@@ -378,16 +455,20 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
     QVector<QString> gid_list = cat.get_gid_list();
     QString sub_template = cat.get_create_sub_template();
     QString qname = cat.get_qname();
-    DWORD compass = GetCurrentThreadId();
-    MSG mailbox;
     int num_gid = gid_list.size();
-    reset_bar(num_gid);
+    int workload = gid_list.size() / cores;
+    int bot = 0;
+    int top = workload - 1;
+    reset_bar(100);
+    int report = 0;
+    double gids_per_percent = (double)num_gid / 100.0;
 
-    auto insert_subtable_gid = [=] (int bot, int top)  // Interval is inclusive.
+    auto insert_subtable_gid = [=] (int bot, int top, int& progress)  // Interval is inclusive.
     {
         QString name, stmt, temp;
         int pos1, ancestry, cheddar;
         UINT message;
+        double gids_done = 0.0;
         for (int ii = bot; ii <= top; ii++)
         {
             for (int jj = 0; jj < tree.size(); jj++)
@@ -418,6 +499,15 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
                     sqlerr("mainwindow.subtables_mt for " + name, qerror);
                 }
             }
+            gids_done += 1.0;
+            if (gids_done >= gids_per_percent)
+            {
+                m_bar.lock();
+                progress++;
+                m_bar.unlock();
+                gids_done -= gids_per_percent;
+            }
+            /*
             message = WM_APP + ii;
             if (!PostThreadMessageW(compass, message, 0, 0))
             {
@@ -425,40 +515,30 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
             }
             temp.setNum(ii);
             qDebug() << "A thread has finished #" << temp;
+            */
         }
     };
 
     vector<std::thread> tapestry;
-    int workload = gid_list.size() / cores;
-    int bot = 0;
-    int top = workload - 1;
-    bool aol = 0;
-    UINT enigma;
     for (int ii = 0; ii < cores; ii++)
     {
         if (ii < cores - 1)
         {
-            std::thread thr(insert_subtable_gid, bot, top);
+            std::thread thr(insert_subtable_gid, bot, top, ref(report));
             tapestry.push_back(std::move(thr));
             bot += workload;
             top += workload;
         }
         else
         {
-            std::thread thr(insert_subtable_gid, bot, gid_list.size() - 1);
+            std::thread thr(insert_subtable_gid, bot, gid_list.size() - 1, ref(report));
             tapestry.push_back(std::move(thr));
         }
     }
-    while (jobs_done < jobs_max)
+    while (report < 100)
     {
-        aol = PeekMessageW(&mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
-        if (aol)
-        {
-            enigma = mailbox.message;
-            enigma -= WM_APP;
-            qDebug() << "Received message: " << enigma;
-            update_bar();
-        }
+        jobs_done = report;
+        ui->progressBar->setValue(jobs_done);
         QCoreApplication::processEvents();
     }
     for (auto& th : tapestry)
@@ -468,6 +548,7 @@ void MainWindow::subtables_mt(CATALOGUE& cat)
             th.join();
         }
     }
+
     logger("Inserted all tables for catalogue " + cat.get_qname());
 }
 

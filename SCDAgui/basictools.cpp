@@ -871,7 +871,7 @@ QVector<QVector<QString>> extract_csv_data_rows(QString& qfile, QVector<QString>
 
     int row_index = -1;
     QString temp1;
-    while (nl2 > 0)
+    for (int ii = 0; ii < row_titles.size(); ii++)
     {
         row_index++;
         rows[row_index].append(row_titles[row_index]);

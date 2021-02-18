@@ -206,6 +206,11 @@ QVector<QString> CATALOGUE::get_row_titles()
     row_titles = model.get_row_titles();
     return row_titles;
 }
+QVector<QVector<QString>> CATALOGUE::get_model_text_variables()
+{
+    QVector<QVector<QString>> tv = model.get_text_variables();
+    return tv;
+}
 
 // Template fabrication functions.
 QString CATALOGUE::get_primary_columns_template()

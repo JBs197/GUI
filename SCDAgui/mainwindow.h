@@ -70,6 +70,7 @@ private:
     void subtables_mapped(CATALOGUE&);
     void populate_cata(int);
     void benchmark1(QString&);
+    void update_text_vars(QVector<QVector<QString>>&, QString&);
 };
 
 #endif // MAINWINDOW_H
