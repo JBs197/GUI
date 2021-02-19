@@ -421,6 +421,15 @@ int qclean(QString& bbq, int mode)
     return count;
 }
 
+// Given an INSERT statement template QString and the position of a parameter char ('?') inside it,
+// replace the char with the given QString (wrapped in ''). The return value is the next such parameter char.
+int insert_val(QString& stmt, int pos, QString val)
+{
+    QString temp = "'" + val + "'";
+    stmt.replace(pos, 1, temp);
+    int pos1 = stmt.indexOf('?', pos);
+    return pos1;
+}
 
 // Read into memory a local file.
 wstring bin_memory(HANDLE& hfile)

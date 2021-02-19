@@ -237,9 +237,9 @@ void MainWindow::populate_cata(int cata_index)
     {
         QVector<QVector<QString>> rows;
         QVector<QVector<QString>> my_text_vars = text_variables;
-        QString qfile, stmt;
+        QString qfile, stmt, debug;
         wstring csv_path;
-        QString temp;
+        QString temp, temp2, temp3;
         bool fine;
         int inum;
         double dnum;
@@ -247,7 +247,7 @@ void MainWindow::populate_cata(int cata_index)
         double gids_done = 0.0;
         int my_progress = 0;
         DWORD my_thread_id = GetCurrentThreadId();
-        int pos1;
+        int pos1, pos2;
 
         for (int ii = bot; ii <= top; ii++)  // For every assigned CSV...
         {
@@ -257,30 +257,25 @@ void MainWindow::populate_cata(int cata_index)
             stmt = primary_template;
 
             // Insert this CSV's values into the catalogue's primary table.
-            pos1 = primary_template.lastIndexOf("VALUES");
-            pos1 = primary_template.indexOf('?', pos1);
-            temp = gid_list[ii];
-            stmt.replace(pos1, 1, temp);  // GID is always first.
+            pos1 = stmt.lastIndexOf("VALUES");
+            pos2 = pos1;
+            pos1 = stmt.indexOf('?', pos1);
+            pos1 = insert_val(stmt, pos1, gid_list[ii]);  // GID is always first.
 
             update_text_vars(my_text_vars, qfile);
             for (int jj = 0; jj < my_text_vars.size(); jj++)
             {
-                pos1 = primary_template.indexOf('?', pos1 + 1);
-                stmt.replace(pos1, 1, my_text_vars[jj][1]);
+                pos1 = insert_val(stmt, pos1, my_text_vars[jj][1]);
             }
 
             for (int jj = 0; jj < rows.size(); jj++)
             {
                 for (int kk = 1; kk < rows[jj].size(); kk++)
                 {
-                    stmt.replace(pos1, 1, rows[jj][kk]);
-                    pos1 = stmt.indexOf('?', pos1 + 1);
+                    pos1 = insert_val(stmt, pos1, rows[jj][kk]);
                 }
             }
-            if (ii == 0)
-            {
-                qprinter("F:\\new_statement.txt", stmt);
-            }
+
             m_executor.lockForWrite();
             QSqlError qerror = executor(stmt);
             m_executor.unlock();
