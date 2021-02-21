@@ -14,6 +14,7 @@ class CATALOGUE
     QString tname;
     string sname;
     wstring wname;
+    QString qyear;
     bool multi_column;
     QString qdescription;
     wstring wfile;
@@ -26,7 +27,8 @@ class CATALOGUE
     QVector<QString> primary_table_column_titles;
     QString primary_table_column_template;
     QVector<QVector<QVector<int>>> tree;
-    QVector<QVector<QString>> model_subtable_text_variables;
+    QVector<QVector<QString>> model_text_variables;
+    QVector<QString> csv_tables_template;  // Form [CSV table, subtables...]
 
 public:
     explicit CATALOGUE() {}
@@ -44,7 +46,7 @@ public:
     QVector<QString> get_CSV_insert_value_statements(int);
     void create_table_taskmaster(QVector<QString>&, int);
     void create_table_mapped(QVector<QString>&);
-    QVector<QVector<QString>> get_nobles();
+    QVector<QString> create_primary_table();
     QString get_create_sub_template();
     QString get_insert_row_template();
     QVector<QVector<QVector<int>>> get_tree();
@@ -66,6 +68,12 @@ public:
     QVector<QString> get_row_titles();
     void set_row_titles(QVector<QString>);
     QVector<QVector<QString>> get_model_text_variables();
+    QString get_year();
+    void set_description(QString);
+    QString get_description();
+    void basic_input(QVector<QString>);
+    void create_csv_table_template();
+    void create_csv_subtables_template();
 };
 
 #endif // CATALOGUE_H

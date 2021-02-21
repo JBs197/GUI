@@ -11,17 +11,35 @@ MainWindow::MainWindow(QWidget *parent)
     ui->cB_drives->addItem("F:");
     ui->cB_drives->addItem("G:");
     ui->progressBar->setValue(0);
+    ui->QL_bar->setText("");
 
-    db = QSqlDatabase::addDatabase("QSQLITE");
-    db.setDatabaseName(db_qpath);
-    if (!db.open()) { sqlerr("db.open, in MainWindow constructor", db.lastError()); }
-
-    clear_log();
+    initialize();
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+
+// MULTI-PURPOSE FUNCTIONS:
+
+// Perform a variety of tasks from the MainWindow constructor:
+// 1. Connect the database memory object with a pre-existing local database file, if it exists.
+// 2. Display (in tree form) the database's current repository of catalogues on the GUI.
+// 3. Begin a new process log for this runtime session.
+void MainWindow::initialize()
+{
+    db = QSqlDatabase::addDatabase("QSQLITE");
+    db.setDatabaseName(db_qpath);
+    if (!db.open()) { sqlerr("db.open-initialize", db.lastError()); }
+    create_cata_index_table();  // Even if starting a new database, this meta-table will always exist.
+
+    update_cata_tree();
+    build_ui_tree(cata_tree, 2);
+
+    clear_log();
+    logger("MainWindow initialized.");
 }
 
 // Threadsafe error log function specific to SQL errors.
@@ -122,15 +140,45 @@ void MainWindow::update_bar()
         warn(L"Tried to update the progress bar before resetting it.");
     }
 }
-void MainWindow::reset_bar(int max)
+void MainWindow::reset_bar(int max, QString status)
 {
     QMutexLocker lock(&m_bar);
     jobs_done = 0;
     jobs_max = max;
     ui->progressBar->setValue(0);
+    ui->QL_bar->setText(status);
 }
 
-// Close the db object, delete the db file, remake the db file with no data inside.
+// Functions for the meta-table 'TCatalogueIndex'.
+void MainWindow::create_cata_index_table()
+{
+    QString stmt = "CREATE TABLE IF NOT EXISTS TCatalogueIndex ( \"Year\" TEXT, ";
+    stmt += "\"Name\" TEXT, \"Description\" TEXT );";
+    m_executor.lockForWrite();
+    QSqlError qerror = executor(stmt);
+    m_executor.unlock();
+    if (qerror.isValid())
+    {
+        sqlerr("executor-mainwindow.create_cata_index_table", qerror);
+    }
+}
+void MainWindow::insert_cata_index(CATALOGUE& cata)
+{
+    QString cata_tname = "T" + cata.get_qname();
+    QString cata_year = cata.get_year();
+    QString cata_desc = cata.get_description();
+    QString stmt = "INSERT INTO TCatalogueIndex ( \"Year\", \"Name\", \"Description\" ) VALUES ( ";
+    stmt += "'" + cata_year + "', '" + cata_tname + "', '" + cata_desc + "' );";
+    m_executor.lockForWrite();
+    QSqlError qerror = executor(stmt);
+    m_executor.unlock();
+    if (qerror.isValid())
+    {
+        sqlerr("executor-mainwindow.insert_cata_index", qerror);
+    }
+}
+
+// Close the db object, delete the db file, and remake the db file with a new CatalogueIndex table.
 void MainWindow::reset_db(QString& db_path)
 {
     db.close();
@@ -138,41 +186,68 @@ void MainWindow::reset_db(QString& db_path)
     delete_file(db_path.toStdWString());
     db = QSqlDatabase::addDatabase("QSQLITE");
     db.setDatabaseName(db_path);
-    if (!db.open()) { sqlerr("db.open-mainwindow.reset_db", db.lastError()); }
+    if (!db.open()) { sqlerr("db.open-mainwindow.reset_db", db.lastError()); }    
+    create_cata_index_table();
+    logger("Database was reset.");
 }
 
-void MainWindow::build_ui_tree(QVector<QVector<QString>>& qtree)
+// For a perpared matrix of QString data, display it on the GUI as a 2D tree widget (year -> cata entry).
+void MainWindow::build_ui_tree(QVector<QVector<QVector<QString>>>& qtree, int window)
 {
-    QVector<QTreeWidgetItem*> qroots;
     QTreeWidgetItem *item;
-    for (qsizetype ii = 0; ii < qtree.size(); ii++)
+    QVector<QTreeWidgetItem*> qroots;
+    switch (window)  // Window:  1 = Catalogues on Drive, 2 = Catalogues in Database
     {
-        item = new QTreeWidgetItem(ui->tW_cata);
-        item->setText(0, qtree[ii][0]);
-        item->setText(1, " ");
-        auto item_flags = item->flags();
-        item_flags.setFlag(Qt::ItemIsSelectable, false);
-        item->setFlags(item_flags);
-        qroots.append(item);
-        add_children(item, qtree[ii]);
+    case 1:
+        ui->TW_cataondrive->clear();
+        for (int ii = 0; ii < qtree.size(); ii++)
+        {
+            item = new QTreeWidgetItem(ui->TW_cataondrive);  // For every year, make a root pointer.
+            item->setText(0, qtree[ii][0][0]);
+            item->setText(1, " ");
+            auto item_flags = item->flags();
+            item_flags.setFlag(Qt::ItemIsSelectable, false);
+            item->setFlags(item_flags);
+            qroots.append(item);
+            add_children(item, qtree[ii]);
+        }
+        ui->TW_cataondrive->addTopLevelItems(qroots);
+        break;
+    case 2:
+        ui->TW_cataindb->clear();
+        for (int ii = 0; ii < qtree.size(); ii++)
+        {
+            item = new QTreeWidgetItem(ui->TW_cataindb);  // For every year, make a root pointer.
+            item->setText(0, qtree[ii][0][0]);
+            item->setText(1, " ");
+            item->setText(2, " ");
+            auto item_flags = item->flags();
+            item_flags.setFlag(Qt::ItemIsSelectable, false);
+            item->setFlags(item_flags);
+            qroots.append(item);
+            add_children(item, qtree[ii]);
+        }
+        ui->TW_cataindb->addTopLevelItems(qroots);
+        break;
     }
-    ui->tW_cata->addTopLevelItems(qroots);
 }
-
-void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QString>& qlist)
+void MainWindow::add_children(QTreeWidgetItem* parent, QVector<QVector<QString>>& cata_list)
 {
     QList<QTreeWidgetItem*> branch;
     QTreeWidgetItem *item;
-    for (qsizetype ii = 1; ii < qlist.size(); ii++)
+    for (int ii = 0; ii < cata_list.size(); ii++)  // For every catalogue in the list...
     {
         item = new QTreeWidgetItem();
-        item->setText(0, qlist[0]);
-        item->setText(1, qlist[ii]);
+        for (int jj = 0; jj < cata_list[ii].size(); jj++)  // For every column we want to display...
+        {
+            item->setText(jj, cata_list[ii][jj]);
+        }
         branch.append(item);
     }
     parent->addChildren(branch);
 }
 
+// For a given CSV qfile, extract the Stats Canada 'text variables'.
 void MainWindow::update_text_vars(QVector<QVector<QString>>& text_vars, QString& qf)
 {
     int pos1, pos2;
@@ -204,7 +279,305 @@ void MainWindow::update_text_vars(QVector<QVector<QString>>& text_vars, QString&
     }
 }
 
-void MainWindow::populate_cata(int cata_index)
+// Takes a prepared SQL statement and executes it. Returns the SQL error generated (can be null).
+QSqlError MainWindow::executor(QString& stmt)
+{
+    QSqlQuery query(db);
+    query.prepare(stmt);
+    QSqlError qerror1 = query.lastError();
+    if (qerror1.isValid())
+    {
+        return qerror1;
+    }
+    query.exec();
+    QSqlError qerror2 = query.lastError();
+    return qerror2;
+}
+
+// Update the catalogue tree and the tree's maps by reading from the database.
+void MainWindow::update_cata_tree()
+{
+    cata_tree.clear();
+    QSqlQuery query("SELECT DISTINCT Year FROM TCatalogueIndex");
+    QSqlError qerr = query.lastError();
+    if (qerr.isValid())
+    {
+        sqlerr("query distinct year-MainWindow.update_cata_tree", qerr);
+    }
+    QSqlRecord rec = query.record();
+    int tree_index, name_index, year_index, desc_index;
+    QVector<QString> temp;
+    QString qname, qyear, qdesc;
+    if (!rec.isEmpty())
+    {
+        // Create the map connecting qyear to tree's first index.
+        cata_tree.resize(rec.count(), QVector<QVector<QString>>());
+        year_index = 0;
+        while (query.next())
+        {
+            qyear = query.value(0).toString();
+            map_tree_year.insert(qyear, year_index);
+            year_index++;
+        }
+
+        // Populate the tree, mapping catalogue names as we go.
+        query.clear();
+        if (!query.prepare("SELECT * FROM TCatalogueIndex"))
+        {
+            sqlerr("query entire metatable-MainWindow.update_cata_tree", query.lastError());
+        }
+        if (!query.exec())
+        {
+            sqlerr("query entire metatable-MainWindow.update_cata_tree", query.lastError());
+        }
+        rec = query.record();
+        year_index = rec.indexOf("Year");
+        name_index = rec.indexOf("Name");
+        desc_index = rec.indexOf("Description");
+        while (query.next()) // For each catalogue in the database...
+        {
+            qname = query.value(name_index).toString();
+            qyear = query.value(year_index).toString();
+            qdesc = query.value(desc_index).toString();
+            temp = { qyear, qname, qdesc };
+            tree_index = map_tree_year.value(qyear);
+            map_tree_cata.insert(qname, cata_tree[tree_index].size());
+            cata_tree[tree_index].append(temp);
+        }
+    }
+}
+
+
+// DEBUG FUNCTIONS:
+void MainWindow::insert_csv_values(CATALOGUE& cat)
+{
+
+}
+
+
+// TASK FUNCTIONS, USED BY ONE OR MORE GUI BUTTONS:
+
+// For a given catalogue, populate its memory object with all values shared amongst GIDs.
+// Then, create its primary table in the database.
+void MainWindow::initialize_catalogue(CATALOGUE& cata, QString& qy, QString& qn)
+{
+    QString cata_path = QString::fromStdWString(root_directory);
+    cata_path += "\\" + qy + "\\" + qn;
+    cata.set_path(cata_path);
+    cata.initialize_table();
+
+    QVector<QString> primary_stmt = cata.create_primary_table();  // Form [statement, tname]
+    QString tname;
+    m_executor.lockForWrite();
+    QSqlError qerror = executor(primary_stmt[0]);
+    m_executor.unlock();
+    if (qerror.isValid())
+    {
+        tname = primary_stmt[1];
+        sqlerr("mainwindow.initialize_catalogue for " + tname, qerror);
+    }
+
+
+
+    /*
+    nobles_st(cata);
+    subtables_mt(cata);
+    insert_cata_index(cata);
+    int index = (int)binder.size();
+    binder.push_back(cata);
+    return index;
+    */
+}
+
+// For a given catalogue, insert all of its CSVs into the database, iterating by GID.
+void MainWindow::insert_cata_csvs_mt(CATALOGUE& cata)
+{
+    QVector<QString> gid_list = cata.get_gid_list();
+    int num_gid = gid_list.size();
+    int workload = num_gid / cores;
+    int bot = 0;
+    int top = workload - 1;
+    int report = 0;
+    reset_bar(100, "Adding geographic regions to catalogue " + cata.get_qname());
+    double gids_per_percent = (double)num_gid / 100.0;
+
+    auto insert_csvs = [=] (CATALOGUE& cata, int bot, int top, int& report)
+    {
+        double gids_done = 0.0;
+        QString gid;
+        for (int ii = bot; ii <= top; ii++)
+        {
+            gid = cata.get_gid(ii);
+
+            // Create the CSV table and all its subtables.
+
+        }
+    };
+}
+
+// Creates database tables for a catalogue's primary table and all full-CSV subtables.
+void MainWindow::nobles_st(CATALOGUE& cat)
+{
+    QElapsedTimer timer;
+    timer.start();
+    QVector<QVector<QString>> noble_statements = cat.get_nobles();
+    QString qname = cat.get_qname();
+    int report = 0;
+    double gids_per_percent = (double)noble_statements.size() / 100.0;
+    reset_bar(100, "Creating CSV tables for " + qname + "...");
+
+    auto create_nobles = [=] (int& report)
+    {
+        QString stmt, tname;
+        double gids_done = 0.0;
+        for (int ii = 0; ii < noble_statements.size(); ii++)
+        {
+            stmt = noble_statements[ii][0];
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                tname = noble_statements[ii][1];
+                sqlerr("mainwindow.nobles_mt for " + tname, qerror);
+            }
+            gids_done += 1.0;
+            if (gids_done >= gids_per_percent)
+            {
+                m_bar.lock();
+                report++;
+                m_bar.unlock();
+                gids_done -= gids_per_percent;
+            }
+        }
+        m_bar.lock();
+        report++;
+        m_bar.unlock();
+    };
+
+    threads_working = 1;
+    std::thread thr(create_nobles, ref(report));
+    while (threads_working)
+    {
+        jobs_done = report;
+        ui->progressBar->setValue(jobs_done);
+        QCoreApplication::processEvents();
+        if (report >= 100)
+        {
+            if (jobs_done < 100)
+            {
+                jobs_done = 100;
+                ui->progressBar->setValue(jobs_done);
+            }
+            threads_working = 0;
+        }
+    }
+    if (thr.joinable())
+    {
+        thr.join();
+    }
+    qDebug() << "nobles_mt " << timer.restart();
+    logger(qname + " and CSV nobles were inserted into the database.");
+}
+
+// Creates all database sub-CSV subtables for a catalogue.
+// st = single-threaded, mt = multithreaded, mapped = Qt concurrent
+void MainWindow::subtables_mt(CATALOGUE& cat)
+{
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString qname = cat.get_qname();
+    int num_gid = gid_list.size();
+    int workload = gid_list.size() / cores;
+    int bot = 0;
+    int top = workload - 1;
+    reset_bar(100, "Creating subtables for " + qname + "...");
+    int report = 0;
+    double gids_per_percent = (double)num_gid / 100.0;
+
+    auto insert_subtable_gid = [=] (int bot, int top, int& report)  // Interval is inclusive.
+    {
+        QString name, stmt, temp;
+        int pos1, ancestry, cheddar;
+        double gids_done = 0.0;
+        for (int ii = bot; ii <= top; ii++)
+        {
+            for (int jj = 0; jj < tree.size(); jj++)
+            {
+                name = "T" + qname + "$" + gid_list[ii];
+                ancestry = tree[jj][0].size();
+                cheddar = 2;
+                for (int ii = 0; ii < ancestry; ii++)
+                {
+                    for (int jj = 0; jj < cheddar; jj++)
+                    {
+                        name += "$";
+                    }
+                    cheddar++;
+                    temp = QString::number(tree[jj][0][ii]);
+                    name += temp;
+                }
+
+                stmt = sub_template;
+                pos1 = stmt.indexOf("!!!");
+                stmt.replace(pos1, 3, name);
+
+                m_executor.lockForWrite();
+                QSqlError qerror = executor(stmt);
+                m_executor.unlock();
+                if (qerror.isValid())
+                {
+                    sqlerr("mainwindow.subtables_mt for " + name, qerror);
+                }
+            }
+            gids_done += 1.0;
+            if (gids_done >= gids_per_percent)
+            {
+                m_bar.lock();
+                report++;
+                m_bar.unlock();
+                gids_done -= gids_per_percent;
+            }
+        }
+    };
+
+    vector<std::thread> tapestry;
+    for (int ii = 0; ii < cores; ii++)
+    {
+        if (ii < cores - 1)
+        {
+            std::thread thr(insert_subtable_gid, bot, top, ref(report));
+            tapestry.push_back(std::move(thr));
+            bot += workload;
+            top += workload;
+        }
+        else
+        {
+            std::thread thr(insert_subtable_gid, bot, gid_list.size() - 1, ref(report));
+            tapestry.push_back(std::move(thr));
+        }
+    }
+    while (report < 100)
+    {
+        jobs_done = report;
+        ui->progressBar->setValue(jobs_done);
+        QCoreApplication::processEvents();
+    }
+    for (auto& th : tapestry)
+    {
+        if (th.joinable())
+        {
+            th.join();
+        }
+    }
+
+    logger("Inserted all tables for catalogue " + cat.get_qname());
+}
+
+// For a given catalogue, for all CSVs, for all tables/subtables,
+// insert all row values into the database.
+void MainWindow::populate_cata_mt(int cata_index)
 {
     QVector<QString> gid_list = binder[cata_index].get_gid_list();
     wstring csv_trunk = binder[cata_index].get_csv_trunk();
@@ -230,7 +603,7 @@ void MainWindow::populate_cata(int cata_index)
     int bot = 0;
     int top = workload - 1;
     double gids_per_percent = (double)glist / 100.0;
-    reset_bar(100);
+    reset_bar(100, "Inserting row values for catalogue " + qname + "...");
     int report = 0;
 
     auto populate_cata_piece = [=] (int bot, int top, int& progress)  // Interval is inclusive.
@@ -240,10 +613,6 @@ void MainWindow::populate_cata(int cata_index)
         QString qfile, stmt, debug;
         wstring csv_path;
         QString temp, temp2, temp3;
-        bool fine;
-        int inum;
-        double dnum;
-        UINT message;
         double gids_done = 0.0;
         int my_progress = 0;
         DWORD my_thread_id = GetCurrentThreadId();
@@ -285,50 +654,6 @@ void MainWindow::populate_cata(int cata_index)
                 sqlerr("mainwindow.populate_cata_piece for " + temp, qerror);
             }
 
-
-            /*
-            QSqlQuery primary_row(db);
-            fine = primary_row.prepare(primary_template);
-            if (!fine)
-            {
-                sqlerr("primary_row.prepare-populate_cata_piece", primary_row.lastError());
-            }
-            for (int jj = 0; jj < rows.size(); jj++)  // For every data row...
-            {
-                for (int kk = 1; kk < rows[jj].size(); kk++)  // For every column with a numeric value...
-                {
-                    inum = rows[jj][kk].toInt(&fine);
-                    if (fine)
-                    {
-                        primary_row.addBindValue(inum);  // If the value is an integer, insert it as such.
-                    }
-                    else
-                    {
-                        dnum = rows[jj][kk].toDouble(&fine);
-                        if (fine)
-                        {
-                            primary_row.addBindValue(dnum);  // If the value is a double, insert it as such.
-                        }
-                        else
-                        {
-                            primary_row.addBindValue(-999);  // If the value is nonconformant, insert it as -999
-                            temp.setNum(jj);                 // and make a note of the failure in the error log.
-                            qwarn("Erroneous value in cata " + qname + " | GID " + gid_list[ii] + " | row " + temp);
-                        }
-                    }
-                }
-            }
-
-            m_executor.lockForWrite();
-            fine = primary_row.exec();
-            if (!fine)
-            {
-                sqlerr("primary_row.exec-populate_cata_piece", primary_row.lastError());
-            }
-            m_executor.unlock();
-            */
-
-
             gids_done += 1.0;
             if (gids_done >= gids_per_percent)
             {
@@ -339,17 +664,11 @@ void MainWindow::populate_cata(int cata_index)
                 qDebug() << "Updated my progress to " << my_progress << " from " << my_thread_id;
                 gids_done -= gids_per_percent;
             }
-            /*
-            message = WM_APP + ii;
-            if (!PostThreadMessageW(compass, message, 0, 0))
-            {
-                winwarn(L"populate_cata_piece");
-            }
-            */
         }
     };
 
     vector<std::thread> tapestry;
+    threads_working = 1;
     for (int ii = 0; ii < cores; ii++)
     {
         if (ii < cores - 1)
@@ -365,11 +684,20 @@ void MainWindow::populate_cata(int cata_index)
             tapestry.push_back(std::move(thr));
         }
     }
-    while (report < 100)
+    while (threads_working)
     {
         jobs_done = report;
         ui->progressBar->setValue(jobs_done);
         QCoreApplication::processEvents();
+        if (report >= 100)
+        {
+            if (jobs_done < 100)
+            {
+                jobs_done = 100;
+                ui->progressBar->setValue(jobs_done);
+            }
+            threads_working = 0;
+        }
     }
     for (auto& th : tapestry)
     {
@@ -381,326 +709,83 @@ void MainWindow::populate_cata(int cata_index)
     logger("Inserted all data rows for catalogue " + qname);
 }
 
-void MainWindow::benchmark1(QString& cata_path)
-{
-    QElapsedTimer timer;
-    timer.start();
-    CATALOGUE cata;
-    cata.set_path(cata_path);
-    cata.initialize_table();
-    qDebug() << "Initialize cata: " << timer.restart();
-    QVector<QVector<QString>> noble_statements = cata.get_nobles();
-    qDebug() << "Get nobles: " << timer.restart();
-    nobles_st(noble_statements);
-    qDebug() << "Insert nobles: " << timer.restart();
 
-    reset_db(db_qpath);
-    subtables_mt(cata);
-    qDebug() << "Insert subtables, MTnoqt: " << timer.restart();
+// GUI-SPECIFIC FUNCTIONS, LINKED TO A SINGLE GUI ELEMENT:
 
-
-}
-
-int MainWindow::insert_cata_tables(QString& cata_path)
-{
-    CATALOGUE cata;
-    cata.set_path(cata_path);
-    cata.initialize_table();
-    QVector<QVector<QString>> noble_statements = cata.get_nobles();
-    nobles_st(noble_statements);
-    subtables_mt(cata);
-    int index = (int)binder.size();
-    binder.push_back(cata);
-    return index;
-}
-
-void MainWindow::subtables_st(CATALOGUE& cat)
-{
-    QVector<QVector<QVector<int>>> tree = cat.get_tree();
-    QVector<QString> gid_list = cat.get_gid_list();
-    QString sub_template = cat.get_create_sub_template();
-    QString stmt, name;
-    int pos1;
-    int num_gid = gid_list.size();
-    reset_bar(num_gid);
-    for (int ii = 0; ii < num_gid; ii++)
-    {
-        for (int jj = 0; jj < tree.size(); jj++)
-        {
-            name = cat.sublabelmaker(gid_list[ii], tree[jj]);
-            stmt = sub_template;
-            pos1 = stmt.indexOf("!!!");
-            stmt.replace(pos1, 3, name);
-
-            m_executor.lockForWrite();
-            QSqlError qerror = executor(stmt);
-            m_executor.unlock();
-            if (qerror.isValid())
-            {
-                sqlerr("mainwindow.subtables_st for " + name, qerror);
-            }
-        }
-        update_bar();
-    }
-}
-
-void MainWindow::subtables_mt(CATALOGUE& cat)
-{
-    QVector<QVector<QVector<int>>> tree = cat.get_tree();
-    QVector<QString> gid_list = cat.get_gid_list();
-    QString sub_template = cat.get_create_sub_template();
-    QString qname = cat.get_qname();
-    int num_gid = gid_list.size();
-    int workload = gid_list.size() / cores;
-    int bot = 0;
-    int top = workload - 1;
-    reset_bar(100);
-    int report = 0;
-    double gids_per_percent = (double)num_gid / 100.0;
-
-    auto insert_subtable_gid = [=] (int bot, int top, int& progress)  // Interval is inclusive.
-    {
-        QString name, stmt, temp;
-        int pos1, ancestry, cheddar;
-        UINT message;
-        double gids_done = 0.0;
-        for (int ii = bot; ii <= top; ii++)
-        {
-            for (int jj = 0; jj < tree.size(); jj++)
-            {
-                name = "T" + qname + "$" + gid_list[ii];
-                ancestry = tree[jj][0].size();
-                cheddar = 2;
-                for (int ii = 0; ii < ancestry; ii++)
-                {
-                    for (int jj = 0; jj < cheddar; jj++)
-                    {
-                        name += "$";
-                    }
-                    cheddar++;
-                    temp = QString::number(tree[jj][0][ii]);
-                    name += temp;
-                }
-
-                stmt = sub_template;
-                pos1 = stmt.indexOf("!!!");
-                stmt.replace(pos1, 3, name);
-
-                m_executor.lockForWrite();
-                QSqlError qerror = executor(stmt);
-                m_executor.unlock();
-                if (qerror.isValid())
-                {
-                    sqlerr("mainwindow.subtables_mt for " + name, qerror);
-                }
-            }
-            gids_done += 1.0;
-            if (gids_done >= gids_per_percent)
-            {
-                m_bar.lock();
-                progress++;
-                m_bar.unlock();
-                gids_done -= gids_per_percent;
-            }
-            /*
-            message = WM_APP + ii;
-            if (!PostThreadMessageW(compass, message, 0, 0))
-            {
-                winwarn(L"subtables_mt");
-            }
-            temp.setNum(ii);
-            qDebug() << "A thread has finished #" << temp;
-            */
-        }
-    };
-
-    vector<std::thread> tapestry;
-    for (int ii = 0; ii < cores; ii++)
-    {
-        if (ii < cores - 1)
-        {
-            std::thread thr(insert_subtable_gid, bot, top, ref(report));
-            tapestry.push_back(std::move(thr));
-            bot += workload;
-            top += workload;
-        }
-        else
-        {
-            std::thread thr(insert_subtable_gid, bot, gid_list.size() - 1, ref(report));
-            tapestry.push_back(std::move(thr));
-        }
-    }
-    while (report < 100)
-    {
-        jobs_done = report;
-        ui->progressBar->setValue(jobs_done);
-        QCoreApplication::processEvents();
-    }
-    for (auto& th : tapestry)
-    {
-        if (th.joinable())
-        {
-            th.join();
-        }
-    }
-
-    logger("Inserted all tables for catalogue " + cat.get_qname());
-}
-
-void MainWindow::subtables_mapped(CATALOGUE& cat)
-{
-    QVector<QVector<QVector<int>>> tree = cat.get_tree();
-    QVector<QString> gid_list = cat.get_gid_list();
-    QString sub_template = cat.get_create_sub_template();
-    QString qname = cat.get_qname();
-    DWORD compass = GetCurrentThreadId();
-    LPMSG mailbox = new MSG;
-    int num_gid = gid_list.size();
-    reset_bar(num_gid);
-
-    auto insert_subtable = [=] (QString gid)
-    {
-        QString name, stmt, temp;
-        int pos1, ancestry, cheddar;
-        UINT message;
-        for (int jj = 0; jj < tree.size(); jj++)
-        {
-            name = "T" + qname + "$" + gid;
-            ancestry = tree[jj][0].size();
-            cheddar = 2;
-            for (int ii = 0; ii < ancestry; ii++)
-            {
-                for (int jj = 0; jj < cheddar; jj++)
-                {
-                    name += "$";
-                }
-                cheddar++;
-                temp = QString::number(tree[jj][0][ii]);
-                name += temp;
-            }
-
-            stmt = sub_template;
-            pos1 = stmt.indexOf("!!!");
-            stmt.replace(pos1, 3, name);
-
-            m_executor.lockForWrite();
-            QSqlError qerror = executor(stmt);
-            m_executor.unlock();
-            if (qerror.isValid())
-            {
-                sqlerr("mainwindow.subtables_mapped for " + name, qerror);
-            }
-        }
-        pos1 = gid.toInt();
-        pos1 -= 1375000;
-        message = WM_APP + pos1;
-        if (!PostThreadMessageW(compass, message, 0, 0))
-        {
-            winwarn(L"subtables_mt");
-        }
-    };
-
-    QFuture<void> bit_of_nothing = QtConcurrent::map(gid_list, insert_subtable);
-    int enigma;
-    bool aol = 0;
-    while (!bit_of_nothing.isFinished())
-    {
-        QThread::msleep(100);
-        aol = PeekMessageW(mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
-        if (aol)
-        {
-            enigma = mailbox->message;
-            enigma -= WM_APP;
-            qDebug() << "Received message: " << enigma;
-            update_bar();
-        }
-    }
-}
-
-void MainWindow::nobles_st(QVector<QVector<QString>>& stmts)
-{
-    for (int ii = 0; ii < stmts.size(); ii++)
-    {
-        m_executor.lockForWrite();
-        QSqlError qerror = executor(stmts[ii][0]);
-        m_executor.unlock();
-        if (qerror.isValid())
-        {
-            sqlerr("mainwindow.nobles_st for " + stmts[ii][1], qerror);
-        }
-    }
-    logger(stmts[0][1] + " and CSV nobles were inserted into the database.");
-}
-
-void MainWindow::insert_csv_values(CATALOGUE& cat)
-{
-
-}
-
-QSqlError MainWindow::executor(QString& stmt)
-{
-    QSqlQuery query(db);
-    query.prepare(stmt);
-    QSqlError qerror1 = query.lastError();
-    if (qerror1.isValid())
-    {
-        return qerror1;
-    }
-    query.exec();
-    QSqlError qerror2 = query.lastError();
-    return qerror2;
-}
-
+// Choose a local drive to examine for spreadsheets.
 void MainWindow::on_cB_drives_currentTextChanged(const QString &arg1)
 {
     wdrive = arg1.toStdWString();
     qdrive = arg1;
 }
 
+// For the given local drive, display (as a tree widget) the available catalogues, organized by year.
 void MainWindow::on_pB_scan_clicked()
 {
     std::vector<std::vector<std::wstring>> wtree = get_subfolders2(wdrive);
-    QVector<QVector<QString>> qtree;
+    QVector<QVector<QVector<QString>>> qtree;  // Form [year][catalogue][year, name]
     wstring wyear, wcata;
     QString qyear, qcata;
     size_t pos1, pos2;
-    for (size_t ii = 0; ii < wtree.size(); ii++)
+    for (size_t ii = 0; ii < wtree.size(); ii++)  // For every year...
     {
-        qtree.append(QVector<QString>());
+        qtree.append(QVector<QVector<QString>>());
         pos1 = wtree[ii][0].find(L"\\");
         pos1++;
         pos2 = wtree[ii][0].find(L"\\", pos1);
         wyear = wtree[ii][0].substr(pos1, pos2 - pos1);
         qyear = QString::fromStdWString(wyear);
-        qtree[ii].append(qyear);
-        for (size_t jj = 0; jj < wtree[ii].size(); jj++)
+        for (size_t jj = 0; jj < wtree[ii].size(); jj++)  // For every catalogue in that year...
         {
+            qtree[ii].append(QVector<QString>());
             pos1 = wtree[ii][jj].rfind(L"\\");
             wcata = wtree[ii][jj].substr(pos1 + 1);
             qcata = QString::fromStdWString(wcata);
-            qtree[ii].append(qcata);
+            qtree[ii][jj].append(qyear);
+            qtree[ii][jj].append(qcata);
         }
     }
-
-    build_ui_tree(qtree);
+    build_ui_tree(qtree, 1);  // Window code 1 will populate the 'Catalogues on Drive' section.
 }
 
+// Insert the selected catalogues into the database.
 void MainWindow::on_pB_insert_clicked()
 {
-    QList<QTreeWidgetItem *> catas_to_do = ui->tW_cata->selectedItems();
-    QString qyear = catas_to_do[0]->text(0);
-    QString qcata = catas_to_do[0]->text(1);
-    QString cata_path = qdrive + "\\" + qyear + "\\" + qcata;
-    int cata_index = insert_cata_tables(cata_path);
-    populate_cata(cata_index);
-    //log8(qcata.toStdString() + " was assigned binder index " + to_string(cata_index));
-    //populate_table(cata_index);
+    QList<QTreeWidgetItem *> catas_to_do = ui->TW_cataondrive->selectedItems();
+    QString qyear, qname, qdesc;
+    int year_index, cata_index;
+    for (int ii = 0; ii < catas_to_do.size(); ii++)
+    {
+        CATALOGUE cata;
+        qyear = catas_to_do[ii]->text(0);
+        qname = catas_to_do[ii]->text(1);
+        cata_index = map_tree_cata.value(qname, -1);
+        if (cata_index < 0)  // Insert the entire catalogue into the database.
+        {
+            initialize_catalogue(cata, qyear, qname);
+            insert_cata_csvs_mt(cata);
+        }
+        else
+        {
+            year_index = map_tree_year.value(qyear);
+            qdesc = cata_tree[year_index][cata_index][2];
+            if (qdesc == "Incomplete")  // Determine which CSVs are missing, then insert them.
+            {
 
+            }
+        }
+        cata_index = insert_cata_tables(qyear, qname);
+        populate_cata_mt(cata_index);
+
+    }
+    update_cata_tree();
+    build_ui_tree(cata_tree, 2);
 }
 
+// (Debug function) Display some information.
 void MainWindow::on_pB_test_clicked()
 {
-    QList<QTreeWidgetItem *> catas_to_do = ui->tW_cata->selectedItems();
+    QList<QTreeWidgetItem *> catas_to_do = ui->TW_cataondrive->selectedItems();
     auto bbq = catas_to_do[0]->flags();
     qDebug() << "Flags before: " << bbq;
     bbq.setFlag(Qt::ItemIsSelectable, false);
@@ -708,8 +793,7 @@ void MainWindow::on_pB_test_clicked()
     qDebug() << "Flags after: " << bbq;
 }
 
-// Runs different versions of application functions and reports their respective running times. Currently testing
-// singlethreaded, std multithreaded, and Qt multithreaded functions on a dummy catalogue containing 100 CSV files.
+// (Debug function) Perform a series of actions to test new functions.
 void MainWindow::on_pB_benchmark_clicked()
 {
     wdrive = L"F:";
@@ -717,5 +801,10 @@ void MainWindow::on_pB_benchmark_clicked()
     QString cata_path = "F:\\3067\\97-570-X1981005";
     reset_db(db_qpath);
     int cata_index = insert_cata_tables(cata_path);
-    populate_cata(cata_index);
+}
+
+// Display the 'tabbed data' for the selected catalogue.
+void MainWindow::on_pB_viewdata_clicked()
+{
+    QList<QTreeWidgetItem *> cata_to_do = ui->TW_cataindb->selectedItems();
 }

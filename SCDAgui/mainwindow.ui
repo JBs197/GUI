@@ -6,21 +6,21 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>670</width>
-    <height>605</height>
+    <width>1312</width>
+    <height>618</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QTreeWidget" name="tW_cata">
+   <widget class="QTreeWidget" name="TW_cataondrive">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>10</y>
+      <y>30</y>
       <width>241</width>
-      <height>481</height>
+      <height>461</height>
      </rect>
     </property>
     <property name="alternatingRowColors">
@@ -38,6 +38,9 @@
     <property name="columnCount">
      <number>2</number>
     </property>
+    <attribute name="headerVisible">
+     <bool>false</bool>
+    </attribute>
     <column>
      <property name="text">
       <string>Year</string>
@@ -55,7 +58,7 @@
       <x>10</x>
       <y>530</y>
       <width>61</width>
-      <height>31</height>
+      <height>41</height>
      </rect>
     </property>
    </widget>
@@ -64,48 +67,40 @@
      <rect>
       <x>80</x>
       <y>530</y>
-      <width>81</width>
-      <height>31</height>
+      <width>71</width>
+      <height>41</height>
      </rect>
     </property>
     <property name="text">
-     <string>Scan</string>
+     <string>Scan 
+ Drive</string>
     </property>
    </widget>
    <widget class="QPushButton" name="pB_insert">
     <property name="geometry">
      <rect>
-      <x>170</x>
+      <x>160</x>
       <y>530</y>
       <width>81</width>
-      <height>31</height>
+      <height>41</height>
      </rect>
     </property>
     <property name="text">
-     <string>Insert</string>
+     <string>Insert 
+ Catalogues</string>
     </property>
    </widget>
    <widget class="QPushButton" name="pB_test">
     <property name="geometry">
      <rect>
-      <x>260</x>
+      <x>540</x>
       <y>530</y>
-      <width>81</width>
-      <height>31</height>
+      <width>71</width>
+      <height>41</height>
      </rect>
     </property>
     <property name="text">
      <string>Test</string>
-    </property>
-   </widget>
-   <widget class="QTreeView" name="treeView">
-    <property name="geometry">
-     <rect>
-      <x>260</x>
-      <y>10</y>
-      <width>401</width>
-      <height>481</height>
-     </rect>
     </property>
    </widget>
    <widget class="QProgressBar" name="progressBar">
@@ -113,7 +108,7 @@
      <rect>
       <x>10</x>
       <y>500</y>
-      <width>651</width>
+      <width>1291</width>
       <height>23</height>
      </rect>
     </property>
@@ -124,14 +119,144 @@
    <widget class="QPushButton" name="pB_benchmark">
     <property name="geometry">
      <rect>
-      <x>350</x>
+      <x>620</x>
       <y>530</y>
       <width>81</width>
-      <height>31</height>
+      <height>41</height>
      </rect>
     </property>
     <property name="text">
      <string>Benchmark</string>
+    </property>
+   </widget>
+   <widget class="QTreeWidget" name="TW_cataindb">
+    <property name="geometry">
+     <rect>
+      <x>260</x>
+      <y>30</y>
+      <width>451</width>
+      <height>461</height>
+     </rect>
+    </property>
+    <property name="mouseTracking">
+     <bool>false</bool>
+    </property>
+    <property name="wordWrap">
+     <bool>true</bool>
+    </property>
+    <column>
+     <property name="text">
+      <string>Year</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Catalogue</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Description</string>
+     </property>
+    </column>
+   </widget>
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>10</y>
+      <width>241</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Catalogues on Drive</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_2">
+    <property name="geometry">
+     <rect>
+      <x>260</x>
+      <y>10</y>
+      <width>211</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Catalogues in Database</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="QL_bar">
+    <property name="geometry">
+     <rect>
+      <x>56</x>
+      <y>503</y>
+      <width>1201</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Progress Report</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+   </widget>
+   <widget class="QTabWidget" name="tabW_results">
+    <property name="geometry">
+     <rect>
+      <x>720</x>
+      <y>10</y>
+      <width>581</width>
+      <height>481</height>
+     </rect>
+    </property>
+    <property name="currentIndex">
+     <number>0</number>
+    </property>
+    <widget class="QWidget" name="GID">
+     <attribute name="title">
+      <string>Geographic Region</string>
+     </attribute>
+     <widget class="QListWidget" name="GID_list">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>581</width>
+        <height>461</height>
+       </rect>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="Rows">
+     <attribute name="title">
+      <string>Row Data Available</string>
+     </attribute>
+     <widget class="QListWidget" name="Rows_list">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>581</width>
+        <height>461</height>
+       </rect>
+      </property>
+     </widget>
+    </widget>
+   </widget>
+   <widget class="QPushButton" name="pB_viewdata">
+    <property name="geometry">
+     <rect>
+      <x>270</x>
+      <y>530</y>
+      <width>71</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>View 
+ Data</string>
     </property>
    </widget>
   </widget>
@@ -140,7 +265,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>670</width>
+     <width>1312</width>
      <height>21</height>
     </rect>
    </property>

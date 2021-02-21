@@ -33,7 +33,8 @@ void CATALOGUE::set_path(QString& cata_path)
 void CATALOGUE::initialize_table()
 {
     int pos1, pos2;
-    size_t wpos1;
+    size_t wpos1, wpos2;
+    wstring wtemp;
     QString temp1;
 
     wstring folder_search = wpath + L"\\*.csv";
@@ -54,6 +55,11 @@ void CATALOGUE::initialize_table()
     wpos1 = sample_name.find(L'(');
     csv_trunk = sample_name.substr(0, wpos1);
 
+    wpos1 = csv_trunk.find(L'\\');
+    wpos2 = csv_trunk.find(L'\\', wpos1 + 1);
+    wtemp = csv_trunk.substr(wpos1 + 1, wpos2 - wpos1 - 1);
+    qyear = QString::fromStdWString(wtemp);
+
     pos1 = qfile.indexOf("\""); pos1++;
     pos2 = qfile.indexOf("\"", pos1);
     temp1 = qfile.mid(pos1, pos2 - pos1);
@@ -73,6 +79,8 @@ void CATALOGUE::initialize_table()
     model.scan(qfile, qname);  // This will populate the embedded CSV object.
     make_name_tree();
     tree = model.get_model_tree();
+    multi_column = model.get_multi_column();
+    column_titles = model.get_column_titles();
 
     if (!FindClose(hfile1)) { warn(L"FindClose-cata.initialize_table"); }
     log8(sname + " initialized.\r\n");
@@ -97,6 +105,12 @@ void CATALOGUE::make_name_tree()
 }
 
 // Worker thread functions.
+void CATALOGUE::basic_input(QVector<QString> input)
+{
+    qyear = input[0];
+    qname = input[1];
+    qdescription = input[2];
+}
 void CATALOGUE::set_tree(QVector<QVector<QVector<int>>> sapling)
 {
     tree = sapling;
@@ -138,6 +152,10 @@ void CATALOGUE::set_row_titles(QVector<QString> rt)
 {
     row_titles = rt;
 }
+void CATALOGUE::set_description(QString desc)
+{
+    qdescription = desc;
+}
 
 // Fetch functions.
 wstring CATALOGUE::get_csv_path(int csv_index)
@@ -154,6 +172,10 @@ QString CATALOGUE::get_csv_branch(int csv_index)
 wstring CATALOGUE::get_csv_trunk()
 {
     return csv_trunk;
+}
+QString CATALOGUE::get_year()
+{
+    return qyear;
 }
 vector<wstring> CATALOGUE::get_csv_branches()
 {
@@ -211,6 +233,10 @@ QVector<QVector<QString>> CATALOGUE::get_model_text_variables()
     QVector<QVector<QString>> tv = model.get_text_variables();
     return tv;
 }
+QString CATALOGUE::get_description()
+{
+    return qdescription;
+}
 
 // Template fabrication functions.
 QString CATALOGUE::get_primary_columns_template()
@@ -233,14 +259,46 @@ QString CATALOGUE::get_primary_columns_template()
     primary_template += " )";
     return primary_template;
 }
+void CATALOGUE::create_csv_table_template()
+{
+    model_text_variables = model.get_text_variables();
 
-// Returns <statement, tname> for the primary catalogue table (first index) and the CSV tables.
-QVector<QVector<QString>> CATALOGUE::get_nobles()
+    QString sql = "CREATE TABLE IF NOT EXISTS \"T" + qname + "!!!";
+    sql += "\" ( ";
+    for (int ii = 0; ii < model_text_variables.size(); ii++)
+    {
+        sql += "\"";
+        sql += model_text_variables[ii][0];
+        sql += "\" TEXT, ";
+    }
+    if (multi_column)
+    {
+        sql += "\"";
+        sql += column_titles[0];
+        sql += "\" TEXT, ";
+        for (int ii = 1; ii < column_titles.size(); ii++)
+        {
+            sql2 += "\"";
+            sql2 += column_titles[ii];
+            sql2 += "\" NUMERIC, ";
+        }
+    }
+    else
+    {
+        sql2 += "\"Description\" TEXT, ";
+        sql2 += "\"Value\" NUMERIC, ";
+    }
+    sql2.remove(sql2.size() - 2, 2);
+    sql2.append(" );");
+}
+
+// Returns <statement, tname> for the primary catalogue table.
+QVector<QString> CATALOGUE::create_primary_table()
 {
     QVector<QVector<QString>> nobles;
     primary_table_column_titles = model.create_table_cata(nobles);
-    model.create_table_csvs(nobles, gid_list);
-    return nobles;
+    //model.create_table_csvs(nobles, gid_list);
+    return nobles[0];
 }
 
 // Returns a CSV's data rows.

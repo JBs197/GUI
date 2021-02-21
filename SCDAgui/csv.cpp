@@ -428,6 +428,8 @@ QString CSV::unique_row_title_multicol(int row_index, int& highest_indent)
 // Returns a list of column titles for the primary (linearized) catalogue table.
 QVector<QString> CSV::create_table_cata(QVector<QVector<QString>>& work)
 {
+    QElapsedTimer timer;
+    timer.start();
     int base_indent;
     QString base, temp;
     QVector<QString> primary_columns = { "GID" };
@@ -481,12 +483,15 @@ QVector<QString> CSV::create_table_cata(QVector<QVector<QString>>& work)
     work.append(QVector<QString>(2));
     work[work.size() - 1][0] = sql;
     work[work.size() - 1][1] = "T" + qname;
+    qDebug() << "CSV.create_table_cata " << timer.restart();
     return primary_columns;
 }
 
 // Build a list of SQL statements to create all the secondary (CSV) tables for this catalogue.
 void CSV::create_table_csvs(QVector<QVector<QString>>& work, QVector<QString>& gid_list)
 {
+    QElapsedTimer timer;
+    timer.start();
     QString sql0 = "CREATE TABLE IF NOT EXISTS \"T" + qname;
     QString sql2 = "\" ( ";
     for (int ii = 0; ii < text_variables.size(); ii++)
@@ -524,6 +529,7 @@ void CSV::create_table_csvs(QVector<QVector<QString>>& work, QVector<QString>& g
         work[work.size() - 1][0] = sql0 + sql1 + sql2;
         work[work.size() - 1][1] = "T" + qname + sql1;
     }
+    qDebug() << "CSV.create_table_csvs " << timer.restart();
 }
 
 // Build a SQL statement to create a subtable, with the table name missing.
@@ -595,6 +601,5 @@ void CSV::insert_row_template(QString& work)
     work.append(" )");
 }
 
-//void CSV::insert_row_primary_table(QString& qfile, )
 
 

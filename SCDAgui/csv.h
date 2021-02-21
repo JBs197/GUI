@@ -33,8 +33,6 @@ private:
     int subqname = 0;
     bool multi_column;
     QVector<int> indent;
-    QMap<int, QString> map_values;  // All maps use the row index from 'row_titles' as their key.
-    QMap<int, int> map_isint;
     QVector<QVector<QString>> text_variables;  // Form [row][text var type, text var value]
     QVector<QString> column_titles;
     QVector<QVector<QVector<int>>> tree;  // Form [path possibility][genealogy][leaves]

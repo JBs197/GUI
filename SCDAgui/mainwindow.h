@@ -39,6 +39,8 @@ private slots:
 
     void on_pB_benchmark_clicked();
 
+    void on_pB_viewdata_clicked();
+
 private:
     Ui::MainWindow *ui;
     int cores = 3;
@@ -46,6 +48,7 @@ private:
     int jobs_max;
     int jobs_done;
     int jobs_percent;
+    int threads_working = 0;
     std::wstring wdrive;
     QString qdrive;
     QReadWriteLock m_executor;
@@ -53,24 +56,30 @@ private:
     int max_progress;
     wstring root_directory = L"F:";  // NOTE: REMOVE HARDCODING LATER
     QString db_qpath = "F:\\SCDA.db";
-    void build_ui_tree(QVector<QVector<QString>>&);
-    void add_children(QTreeWidgetItem*, QVector<QString>&);
+    QVector<QVector<QVector<QString>>> cata_tree;  // Form [year][catalogue][qyear, qname, qdescription].
+    QMap<QString, int> map_tree_year;  // For a given qyear, return that cata_tree index.
+    QMap<QString, int> map_tree_cata;  // For a given qname, return that cata_tree index.
+    void build_ui_tree(QVector<QVector<QVector<QString>>>&, int);
+    void add_children(QTreeWidgetItem*, QVector<QVector<QString>>&);
     QSqlError executor(QString&);
-    int insert_cata_tables(QString&);
+    void initialize_catalogue(CATALOGUE&, QString&, QString&);
     void insert_csv_values(CATALOGUE&);
     void clear_log();
     void reset_db(QString&);
     void update_bar();
-    void reset_bar(int);
-    std::vector<CATALOGUE> binder;
+    void reset_bar(int, QString);
+    vector<vector<CATALOGUE>> binder;  // Form [year][catalogue]
+    void initialize();
     QString sqlerr_enum(QSqlError::ErrorType);
-    void nobles_st(QVector<QVector<QString>>&);
-    void subtables_st(CATALOGUE&);
+    void nobles_st(CATALOGUE&);
     void subtables_mt(CATALOGUE&);
     void subtables_mapped(CATALOGUE&);
-    void populate_cata(int);
-    void benchmark1(QString&);
+    void populate_cata_mt(int);
     void update_text_vars(QVector<QVector<QString>>&, QString&);
+    void update_cata_tree();
+    void create_cata_index_table();
+    void insert_cata_index(CATALOGUE&);
+    void insert_cata_csvs_mt(CATALOGUE&);
 };
 
 #endif // MAINWINDOW_H
