@@ -8,3 +8,6 @@ Rewrote significant portions of "Database" such that the data parsed from CSV fi
 The GUI app is now multithreaded. Small tasks are given one new thread, so as to avoid freezing the GUI. Large tasks are given a few parallel threads through which they perform their share of the total workload. The app gained a new button "Benchmark" which can perform a trial run of some multithreaded task using a variety of different internal methods (single-threaded, std multithreaded, Qt multithreaded) and report on the runtime of each method tested. When testing the insertion of large quantities of SQL statements, std multithreaded has demonstrated the best performance. 
 
 Additionally, a multithreaded progress bar was added to the GUI. It will receive signals from each thread performing the task, and display the task's overall progress towards completion. 
+
+[2021/02/22]
+Restructured key functions so that large operations will iterate along the hierarchal pattern "catalogue->CSV->primary table->subtables". Done this way, the app can resume an interrupted or cancelled operation without having to restart. Also, more general functionality has been added, for both the GUI and SQL. More widgets are displaying information visually, and the thread wait time to access the database (in use) has been decreased. 
