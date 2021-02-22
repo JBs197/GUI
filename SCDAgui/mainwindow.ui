@@ -144,6 +144,9 @@
     <property name="wordWrap">
      <bool>true</bool>
     </property>
+    <attribute name="headerDefaultSectionSize">
+     <number>120</number>
+    </attribute>
     <column>
      <property name="text">
       <string>Year</string>
@@ -212,7 +215,7 @@
      </rect>
     </property>
     <property name="currentIndex">
-     <number>0</number>
+     <number>1</number>
     </property>
     <widget class="QWidget" name="GID">
      <attribute name="title">

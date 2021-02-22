@@ -5,7 +5,7 @@ using namespace std;
 // Return a subtable name, given GID and genealogy.
 QString CATALOGUE::sublabelmaker(QString& gid, QVector<QVector<int>>& family)
 {
-    QString stname = "T" + qname + "$" + gid;
+    QString stname = "[" + qname + "$" + gid;
     int ancestry = family[0].size();
     int cheddar = 2;
     QString temp;
@@ -19,6 +19,7 @@ QString CATALOGUE::sublabelmaker(QString& gid, QVector<QVector<int>>& family)
         temp = QString::number(family[0][ii]);
         stname += temp;
     }
+    stname += "]";
     return stname;
 }
 
@@ -250,72 +251,64 @@ QString CATALOGUE::get_primary_template()
 void CATALOGUE::insert_primary_columns_template()
 {
     int col_count = primary_table_column_titles.size();
-    QString primary_template = "INSERT INTO \"" + tname + "\" ( ";
-    for (int ii = 0; ii < col_count; ii++)
+    QString primary_template = "INSERT INTO [" + qname + "] (GID, ";
+    for (int ii = 1; ii < primary_table_column_titles.size(); ii++)
     {
-        primary_template += "\"";
+        primary_template += "[";
         primary_template += primary_table_column_titles[ii];
-        primary_template += "\", ";
+        primary_template += "], ";
     }
     primary_template.remove(primary_template.size() - 2, 2);
-    primary_template += " ) VALUES ( ";
+    primary_template += ") VALUES (";
     for (int ii = 0; ii < col_count; ii++)
     {
         primary_template += "?, ";
     }
     primary_template.remove(primary_template.size() - 2, 2);
-    primary_template += " );";
+    primary_template += ")";
     primary_table_column_template = primary_template;
 }
 void CATALOGUE::create_csv_tables_template()
 {
-    QString sql = "CREATE TABLE IF NOT EXISTS \"!!!\" ( ";
+    QString sql = "CREATE TABLE IF NOT EXISTS !!! (";
     if (multi_column)
     {
-        sql += "\"";
+        sql += "[";
         sql += column_titles[0];
-        sql += "\" TEXT, ";
+        sql += "] TEXT, ";
         for (int ii = 1; ii < column_titles.size(); ii++)
         {
-            sql += "\"";
+            sql += "[";
             sql += column_titles[ii];
-            sql += "\" NUMERIC, ";
+            sql += "] NUMERIC, ";
         }
     }
     else
     {
-        sql += "\"Description\" TEXT, ";
-        sql += "\"Value\" NUMERIC, ";
+        sql += "[Description] TEXT, ";
+        sql += "[Value] NUMERIC, ";
     }
     sql.remove(sql.size() - 2, 2);
-    sql.append(" );");
+    sql.append(")");
     csv_tables_template = sql;
 }
 void CATALOGUE::insert_csv_row_template()
 {
-    QString sql = "INSERT INTO \"!!!\" ( ";
-    if (multi_column)
+    QString sql = "INSERT INTO !!! (";
+    for (int ii = 0; ii < column_titles.size(); ii++)
     {
-        for (int ii = 0; ii < column_titles.size(); ii++)
-        {
-            sql += "\"";
-            sql += column_titles[ii];
-            sql += "\", ";
-        }
-    }
-    else
-    {
-        sql += "\"Description\", ";
-        sql += "\"Value\", ";
+        sql += "[";
+        sql += column_titles[ii];
+        sql += "], ";
     }
     sql.remove(sql.size() - 2, 2);
-    sql.append(" ) VALUES ( ");
+    sql.append(") VALUES (");
     for (int ii = 0; ii < column_titles.size(); ii++)
     {
         sql += "?, ";
     }
     sql.remove(sql.size() - 2, 2);
-    sql.append(" );");
+    sql.append(")");
     ins_csv_row_template = sql;
 }
 
@@ -327,6 +320,13 @@ QString CATALOGUE::create_primary_table()
     QString base, title;
     int indent;
     int old_indent = 0;
+
+    // Don't forget the preliminaries...
+    linearized_titles.append("GID");
+    for (int ii = 0; ii < model_text_variables.size(); ii++)
+    {
+        linearized_titles.append(model_text_variables[ii][0]);
+    }
 
     // Linearize the CSV spreadsheet, and save the title list for later use.
     if (multi_column)
@@ -402,19 +402,21 @@ QString CATALOGUE::create_primary_table()
     }
     primary_table_column_titles = linearized_titles;
 
-    // Create the catalogue's primary table in the database.
-    QString stmt = "CREATE TABLE IF NOT EXISTS \"T" + qname + "\" ( ";
+    // Build the statement to create the catalogue's primary table in the database.
+    int deviants = 1;  // GID
+    QString stmt = "CREATE TABLE IF NOT EXISTS [" + qname + "] (";
     stmt += "GID INTEGER PRIMARY KEY, ";
     for (int ii = 0; ii < model_text_variables.size(); ii++)
     {
-        stmt += "\"" + model_text_variables[ii][0] + "\" TEXT, ";
+        stmt += "[" + model_text_variables[ii][0] + "] TEXT, ";
+        deviants++;
     }
-    for (int ii = 0; ii < linearized_titles.size(); ii++)
+    for (int ii = deviants; ii < linearized_titles.size(); ii++)
     {
-        stmt += "\"" + linearized_titles[ii] + "\" NUMERIC, ";
+        stmt += "[" + linearized_titles[ii] + "] NUMERIC, ";
     }
     stmt.remove(stmt.size() - 2, 2);
-    stmt.append(" );");
+    stmt.append(")");
     return stmt;
 }
 

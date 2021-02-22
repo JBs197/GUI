@@ -426,7 +426,13 @@ int qclean(QString& bbq, int mode)
 int insert_val(QString& stmt, int pos, QString val)
 {
     qclean(val, 1);
-    QString temp = "'" + val + "'";
+    stmt.replace(pos, 1, val);
+    int pos1 = stmt.indexOf('?', pos);
+    return pos1;
+}
+int insert_text(QString& stmt, int pos, QString text)
+{
+    QString temp = "[" + text + "]";
     stmt.replace(pos, 1, temp);
     int pos1 = stmt.indexOf('?', pos);
     return pos1;

@@ -59,6 +59,7 @@ int qclean(QString&, int);
 // Given an INSERT statement template QString and the position of a parameter char ('?') inside it,
 // replace the char with the given QString. The return value is the next such parameter char.
 int insert_val(QString&, int, QString);
+int insert_text(QString&, int, QString);
 
 // Read into memory a local file.
 wstring bin_memory(HANDLE&);

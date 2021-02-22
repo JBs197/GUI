@@ -538,26 +538,26 @@ void CSV::create_table_csvs(QVector<QVector<QString>>& work, QVector<QString>& g
 // Build a SQL statement to create a subtable, with the table name missing.
 void CSV::create_sub_template(QString& work)
 {
-    work = "CREATE TABLE IF NOT EXISTS \"!!!\" ( ";
+    work = "CREATE TABLE IF NOT EXISTS !!! (";
     if (multi_column)
     {
-        work += "\"";
+        work += "[";
         work += column_titles[0];
-        work += "\" TEXT, ";
+        work += "] TEXT, ";
         for (int ii = 1; ii < column_titles.size(); ii++)
         {
-            work += "\"";
+            work += "[";
             work += column_titles[ii];
-            work += "\" NUMERIC, ";
+            work += "] NUMERIC, ";
         }
     }
     else
     {
-        work += "\"Description\" TEXT, ";
-        work += "\"Value\" NUMERIC, ";
+        work += "[Description] TEXT, ";
+        work += "[Value] NUMERIC, ";
     }
     work.remove(work.size() - 2, 2);
-    work.append(" );");
+    work.append(")");
 }
 
 // Build a SQL statement to insert a row into the (non-primary) table, with the table name missing.

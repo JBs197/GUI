@@ -49,10 +49,10 @@ private:
     int jobs_done;
     int jobs_percent;
     int threads_working = 0;
+    int connection_count = 0;
     std::wstring wdrive;
     QString qdrive;
-    QReadWriteLock m_executor;
-    QMutex m_err, m_log, m_bar;
+    QMutex m_db, m_err, m_log, m_bar;
     int max_progress;
     wstring root_directory = L"F:";  // NOTE: REMOVE HARDCODING LATER
     QString db_qpath = "F:\\SCDA.db";
@@ -61,15 +61,15 @@ private:
     QMap<QString, int> map_tree_cata;  // For a given qname, return that cata_tree index.
     void build_ui_tree(QVector<QVector<QVector<QString>>>&, int);
     void add_children(QTreeWidgetItem*, QVector<QVector<QString>>&);
-    QSqlError executor(QString&);
+    void executor(QSqlQuery&);
     QSqlError executor_select(QString&, QSqlQuery&);
     void initialize_catalogue(CATALOGUE&, QString&, QString&);
     void bbq();
+    QString name_gen();
     void clear_log();
     void reset_db(QString&);
     void update_bar();
     void reset_bar(int, QString);
-    vector<vector<CATALOGUE>> binder;  // Form [year][catalogue]
     void initialize();
     QString sqlerr_enum(QSqlError::ErrorType);
     void nobles_st(CATALOGUE&);
@@ -84,9 +84,10 @@ private:
     void insert_cata_csvs_mt(CATALOGUE&);
     void create_csv_tables(CATALOGUE&, QString);
     void populate_csv_tables(CATALOGUE&, int);
-    void insert_primary_row(CATALOGUE&, QString&, QVector<QVector<QString>>&, QVector<QVector<QString>>&);
-    void create_insert_csv_table(CATALOGUE&, QString&, QVector<QVector<QString>>&);
-    void create_insert_csv_subtables(CATALOGUE&, QString&, QVector<QVector<QString>>&);
+    void insert_primary_row(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&, QVector<QVector<QString>>&);
+    void create_insert_csv_table(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
+    void create_insert_csv_subtables(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
+    void all_cata_db(QVector<QVector<QString>>&, QMap<QString, int>&);
 };
 
 #endif // MAINWINDOW_H
