@@ -62,8 +62,9 @@ private:
     void build_ui_tree(QVector<QVector<QVector<QString>>>&, int);
     void add_children(QTreeWidgetItem*, QVector<QVector<QString>>&);
     QSqlError executor(QString&);
+    QSqlError executor_select(QString&, QSqlQuery&);
     void initialize_catalogue(CATALOGUE&, QString&, QString&);
-    void insert_csv_values(CATALOGUE&);
+    void bbq();
     void clear_log();
     void reset_db(QString&);
     void update_bar();
@@ -79,7 +80,13 @@ private:
     void update_cata_tree();
     void create_cata_index_table();
     void insert_cata_index(CATALOGUE&);
+    void finish_cata_index(CATALOGUE&);
     void insert_cata_csvs_mt(CATALOGUE&);
+    void create_csv_tables(CATALOGUE&, QString);
+    void populate_csv_tables(CATALOGUE&, int);
+    void insert_primary_row(CATALOGUE&, QString&, QVector<QVector<QString>>&, QVector<QVector<QString>>&);
+    void create_insert_csv_table(CATALOGUE&, QString&, QVector<QVector<QString>>&);
+    void create_insert_csv_subtables(CATALOGUE&, QString&, QVector<QVector<QString>>&);
 };
 
 #endif // MAINWINDOW_H

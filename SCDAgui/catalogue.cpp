@@ -79,8 +79,10 @@ void CATALOGUE::initialize_table()
     model.scan(qfile, qname);  // This will populate the embedded CSV object.
     make_name_tree();
     tree = model.get_model_tree();
+    model_text_variables = model.get_text_variables();
     multi_column = model.get_multi_column();
     column_titles = model.get_column_titles();
+    row_titles = model.get_row_titles();
 
     if (!FindClose(hfile1)) { warn(L"FindClose-cata.initialize_table"); }
     log8(sname + " initialized.\r\n");
@@ -203,11 +205,9 @@ QString CATALOGUE::get_create_sub_template()
     model.create_sub_template(sub_template);
     return sub_template;
 }
-QString CATALOGUE::get_insert_row_template()
+QString CATALOGUE::get_insert_csv_row_template()
 {
-    QString row_template;
-    model.insert_row_template(row_template);
-    return row_template;
+    return ins_csv_row_template;
 }
 int CATALOGUE::get_gid_size()
 {
@@ -237,9 +237,17 @@ QString CATALOGUE::get_description()
 {
     return qdescription;
 }
+QString CATALOGUE::get_csv_template()
+{
+    return csv_tables_template;
+}
+QString CATALOGUE::get_primary_template()
+{
+    return primary_table_column_template;
+}
 
 // Template fabrication functions.
-QString CATALOGUE::get_primary_columns_template()
+void CATALOGUE::insert_primary_columns_template()
 {
     int col_count = primary_table_column_titles.size();
     QString primary_template = "INSERT INTO \"" + tname + "\" ( ";
@@ -256,21 +264,12 @@ QString CATALOGUE::get_primary_columns_template()
         primary_template += "?, ";
     }
     primary_template.remove(primary_template.size() - 2, 2);
-    primary_template += " )";
-    return primary_template;
+    primary_template += " );";
+    primary_table_column_template = primary_template;
 }
-void CATALOGUE::create_csv_table_template()
+void CATALOGUE::create_csv_tables_template()
 {
-    model_text_variables = model.get_text_variables();
-
-    QString sql = "CREATE TABLE IF NOT EXISTS \"T" + qname + "!!!";
-    sql += "\" ( ";
-    for (int ii = 0; ii < model_text_variables.size(); ii++)
-    {
-        sql += "\"";
-        sql += model_text_variables[ii][0];
-        sql += "\" TEXT, ";
-    }
+    QString sql = "CREATE TABLE IF NOT EXISTS \"!!!\" ( ";
     if (multi_column)
     {
         sql += "\"";
@@ -278,33 +277,180 @@ void CATALOGUE::create_csv_table_template()
         sql += "\" TEXT, ";
         for (int ii = 1; ii < column_titles.size(); ii++)
         {
-            sql2 += "\"";
-            sql2 += column_titles[ii];
-            sql2 += "\" NUMERIC, ";
+            sql += "\"";
+            sql += column_titles[ii];
+            sql += "\" NUMERIC, ";
         }
     }
     else
     {
-        sql2 += "\"Description\" TEXT, ";
-        sql2 += "\"Value\" NUMERIC, ";
+        sql += "\"Description\" TEXT, ";
+        sql += "\"Value\" NUMERIC, ";
     }
-    sql2.remove(sql2.size() - 2, 2);
-    sql2.append(" );");
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" );");
+    csv_tables_template = sql;
+}
+void CATALOGUE::insert_csv_row_template()
+{
+    QString sql = "INSERT INTO \"!!!\" ( ";
+    if (multi_column)
+    {
+        for (int ii = 0; ii < column_titles.size(); ii++)
+        {
+            sql += "\"";
+            sql += column_titles[ii];
+            sql += "\", ";
+        }
+    }
+    else
+    {
+        sql += "\"Description\", ";
+        sql += "\"Value\", ";
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" ) VALUES ( ");
+    for (int ii = 0; ii < column_titles.size(); ii++)
+    {
+        sql += "?, ";
+    }
+    sql.remove(sql.size() - 2, 2);
+    sql.append(" );");
+    ins_csv_row_template = sql;
 }
 
-// Returns <statement, tname> for the primary catalogue table.
-QVector<QString> CATALOGUE::create_primary_table()
+//
+QString CATALOGUE::create_primary_table()
 {
-    QVector<QVector<QString>> nobles;
-    primary_table_column_titles = model.create_table_cata(nobles);
-    //model.create_table_csvs(nobles, gid_list);
-    return nobles[0];
+    QVector<QString> linearized_titles;
+    QVector<QString> family_line;
+    QString base, title;
+    int indent;
+    int old_indent = 0;
+
+    // Linearize the CSV spreadsheet, and save the title list for later use.
+    if (multi_column)
+    {
+        for (int ii = 0; ii < row_titles.size(); ii++)
+        {
+            base.clear();
+            indent = 0;
+            while (row_titles[ii][indent] == '+')
+            {
+                indent++;
+            }
+            if (indent > old_indent)
+            {
+                family_line.append(row_titles[ii - 1]);
+                old_indent = indent;
+            }
+            else if (indent < old_indent)
+            {
+                for (int jj = 0; jj < old_indent - indent; jj++)
+                {
+                    family_line.removeLast();
+                }
+                old_indent = indent;
+            }
+            for (int jj = 0; jj < family_line.size(); jj++)
+            {
+                base.append(family_line[jj]);
+                base += " ";
+            }
+            base.append(row_titles[ii]);
+
+            for (int jj = 1; jj < column_titles.size(); jj++)
+            {
+                // Note: the first column title is dropped, as it is not useful.
+                title = base + " @ ";  // The 'at' symbol separates rows from columns.
+                title += column_titles[jj];
+                linearized_titles.append(title);
+            }
+        }
+    }
+    else
+    {
+        for (int ii = 0; ii < row_titles.size(); ii++)
+        {
+            base.clear();
+            indent = 0;
+            while (row_titles[ii][indent] == '+')
+            {
+                indent++;
+            }
+            if (indent > old_indent)
+            {
+                family_line.append(row_titles[ii - 1]);
+                old_indent = indent;
+            }
+            else if (indent < old_indent)
+            {
+                for (int jj = 0; jj < old_indent - indent; jj++)
+                {
+                    family_line.removeLast();
+                }
+                old_indent = indent;
+            }
+            for (int jj = 0; jj < family_line.size(); jj++)
+            {
+                base.append(family_line[jj]);
+                base += " ";
+            }
+            base.append(row_titles[ii]);
+            linearized_titles.append(base);
+        }
+    }
+    primary_table_column_titles = linearized_titles;
+
+    // Create the catalogue's primary table in the database.
+    QString stmt = "CREATE TABLE IF NOT EXISTS \"T" + qname + "\" ( ";
+    stmt += "GID INTEGER PRIMARY KEY, ";
+    for (int ii = 0; ii < model_text_variables.size(); ii++)
+    {
+        stmt += "\"" + model_text_variables[ii][0] + "\" TEXT, ";
+    }
+    for (int ii = 0; ii < linearized_titles.size(); ii++)
+    {
+        stmt += "\"" + linearized_titles[ii] + "\" NUMERIC, ";
+    }
+    stmt.remove(stmt.size() - 2, 2);
+    stmt.append(" );");
+    return stmt;
+}
+
+// Returns a CSV's text variable rows.
+QVector<QVector<QString>> CATALOGUE::extract_text_vars(QString& qfile)
+{
+    QVector<QVector<QString>> text_variables;
+    QString temp1;
+    int pos1, pos2;
+    QChar math;
+    pos1 = 0;
+    while (1)
+    {
+        pos1 = qfile.indexOf('=', pos1 + 1);
+        if (pos1 < 0) { break; }  // Primary loop exit.
+        math = qfile[pos1 - 1];
+        if (math == '<' || math == '>') { continue; }
+
+        text_variables.push_back(QVector<QString>());
+        pos2 = qfile.lastIndexOf('"', pos1); pos2++;
+        temp1 = qfile.mid(pos2, pos1 - pos2);
+        qclean(temp1, 0);
+        text_variables[text_variables.size() - 1].push_back(temp1);
+
+        pos2 = qfile.indexOf('"', pos1);
+        temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
+        qclean(temp1, 1);
+        text_variables[text_variables.size() - 1].push_back(temp1);
+    }
+    return text_variables;
 }
 
 // Returns a CSV's data rows.
-QVector<QVector<QString>> CATALOGUE::extract_data_rows()
+QVector<QVector<QString>> CATALOGUE::extract_data_rows(QString& qfile)
 {
-    QVector<QVector<QString>> rows(row_titles.size(), QVector<QString>());
+    QVector<QVector<QString>> rows;
     int pos1, pos2, pos3, nl1, nl2;
     QChar math;
     pos1 = qfile.size() - 1;
@@ -333,6 +479,13 @@ QVector<QVector<QString>> CATALOGUE::extract_data_rows()
     QString temp1;
     while (nl2 > 0)
     {
+        pos1 = qfile.indexOf('"', nl1);
+        pos2 = qfile.lastIndexOf('"', nl2);
+        temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
+        qclean(temp1, 0);
+        if (temp1 == "Note") { break; }
+
+        rows.append(QVector<QString>());
         row_index++;
         rows[row_index].append(row_titles[row_index]);
 
@@ -367,4 +520,12 @@ QVector<QVector<QString>> CATALOGUE::extract_data_rows()
         nl2 = qfile.indexOf('\n', nl1 + 1);
     }
     return rows;
+}
+
+void CATALOGUE::print_stuff()
+{
+    qprinter("F:\\primary_table_column_template.txt", primary_table_column_template);
+    qprinter("F:\\csv_tables_template.txt", csv_tables_template);
+    qprinter("F:\\ins_csv_row_template.txt", ins_csv_row_template);
+
 }

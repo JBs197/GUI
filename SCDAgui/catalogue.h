@@ -28,7 +28,8 @@ class CATALOGUE
     QString primary_table_column_template;
     QVector<QVector<QVector<int>>> tree;
     QVector<QVector<QString>> model_text_variables;
-    QVector<QString> csv_tables_template;  // Form [CSV table, subtables...]
+    QString csv_tables_template;  // Has '!!!' in place of the table name.
+    QString ins_csv_row_template;
 
 public:
     explicit CATALOGUE() {}
@@ -46,12 +47,13 @@ public:
     QVector<QString> get_CSV_insert_value_statements(int);
     void create_table_taskmaster(QVector<QString>&, int);
     void create_table_mapped(QVector<QString>&);
-    QVector<QString> create_primary_table();
+    QString create_primary_table();
     QString get_create_sub_template();
-    QString get_insert_row_template();
+    QString get_insert_csv_row_template();
     QVector<QVector<QVector<int>>> get_tree();
     QVector<QString> get_gid_list();
-    QString get_primary_columns_template();
+    void insert_primary_columns_template();
+    QString get_primary_template();
     void set_primary_columns_template(QString);
     void set_tree(QVector<QVector<QVector<int>>>);
     void set_gid_list(QVector<QString>);
@@ -62,7 +64,7 @@ public:
     bool get_multicol();
     void set_multicol(bool);
     void set_qfile(int);
-    QVector<QVector<QString>> extract_data_rows();
+    QVector<QVector<QString>> extract_data_rows(QString&);
     QVector<QString> get_column_titles();
     void set_column_titles(QVector<QString>);
     QVector<QString> get_row_titles();
@@ -72,8 +74,11 @@ public:
     void set_description(QString);
     QString get_description();
     void basic_input(QVector<QString>);
-    void create_csv_table_template();
-    void create_csv_subtables_template();
+    void create_csv_tables_template();
+    QString get_csv_template();
+    QVector<QVector<QString>> extract_text_vars(QString&);
+    void insert_csv_row_template();
+    void print_stuff();
 };
 
 #endif // CATALOGUE_H

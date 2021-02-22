@@ -223,7 +223,7 @@ int CSV::extract_variables()
 
         pos2 = qfile.indexOf('"', pos1);
         temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
-        qclean(temp1, 1);
+        qclean(temp1, 0);
         temp2 = "\'" + temp1 + "\'";
         text_variables[text_variables.size() - 1].push_back(temp2);
     }
@@ -255,6 +255,9 @@ int CSV::extract_column_titles(int pos0)
     if (column_titles.size() < 2)
     {
         multi_column = 0;
+        column_titles.resize(2);
+        column_titles[0] = "Description";
+        column_titles[1] = "Value";
         return nl1;  // This was a data line - redo it later.
     }
 
@@ -536,12 +539,6 @@ void CSV::create_table_csvs(QVector<QVector<QString>>& work, QVector<QString>& g
 void CSV::create_sub_template(QString& work)
 {
     work = "CREATE TABLE IF NOT EXISTS \"!!!\" ( ";
-    for (int ii = 0; ii < text_variables.size(); ii++)
-    {
-        work += "\"";
-        work += text_variables[ii][0];
-        work += "\" TEXT, ";
-    }
     if (multi_column)
     {
         work += "\"";

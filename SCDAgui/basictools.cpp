@@ -425,6 +425,7 @@ int qclean(QString& bbq, int mode)
 // replace the char with the given QString (wrapped in ''). The return value is the next such parameter char.
 int insert_val(QString& stmt, int pos, QString val)
 {
+    qclean(val, 1);
     QString temp = "'" + val + "'";
     stmt.replace(pos, 1, temp);
     int pos1 = stmt.indexOf('?', pos);

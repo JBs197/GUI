@@ -37,7 +37,7 @@ private:
     QVector<QString> column_titles;
     QVector<QVector<QVector<int>>> tree;  // Form [path possibility][genealogy][leaves]
     QVector<QString> unique_row_buffer;  // Form [value's indentation]. It is initialized with an empty string in 'scan'.
-    QVector<QVector<QString>> model_rows;  // Form [row_index][title column, data columns][value]
+    QVector<QVector<QString>> model_rows;  // Form [row_index][row title, row values...]
     QVector<int> model_is_int;  // Form [row_index], values 0 = error, 1 = int, 2 = double.
     int extract_variables();
     int extract_column_titles(int);
