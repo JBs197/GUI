@@ -159,6 +159,14 @@ void CATALOGUE::set_description(QString desc)
 {
     qdescription = desc;
 }
+void CATALOGUE::cancel_insertion()
+{
+    remote_control = 1;
+}
+void CATALOGUE::set_gid_want_list(QVector<QString>& gwl)
+{
+    gid_want_list = gwl;
+}
 
 // Fetch functions.
 wstring CATALOGUE::get_csv_path(int csv_index)
@@ -245,6 +253,14 @@ QString CATALOGUE::get_csv_template()
 QString CATALOGUE::get_primary_template()
 {
     return primary_table_column_template;
+}
+int CATALOGUE::get_status()
+{
+    return remote_control;
+}
+QVector<QString> CATALOGUE::get_gid_want_list()
+{
+    return gid_want_list;
 }
 
 // Template fabrication functions.

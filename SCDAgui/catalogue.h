@@ -30,6 +30,8 @@ class CATALOGUE
     QVector<QVector<QString>> model_text_variables;
     QString csv_tables_template;  // Has '!!!' in place of the table name.
     QString ins_csv_row_template;
+    int remote_control = 0;  // Directive for the object. 0 = standard, 1 = cancel.
+    QVector<QString> gid_want_list;
 
 public:
     explicit CATALOGUE() {}
@@ -79,6 +81,10 @@ public:
     QVector<QVector<QString>> extract_text_vars(QString&);
     void insert_csv_row_template();
     void print_stuff();
+    void cancel_insertion();
+    int get_status();
+    void set_gid_want_list(QVector<QString>&);
+    QVector<QString> get_gid_want_list();
 };
 
 #endif // CATALOGUE_H

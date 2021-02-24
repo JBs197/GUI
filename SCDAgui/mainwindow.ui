@@ -251,7 +251,7 @@
    <widget class="QPushButton" name="pB_viewdata">
     <property name="geometry">
      <rect>
-      <x>270</x>
+      <x>350</x>
       <y>530</y>
       <width>71</width>
       <height>41</height>
@@ -260,6 +260,23 @@
     <property name="text">
      <string>View 
  Data</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pB_cancel">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>270</x>
+      <y>530</y>
+      <width>75</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Cancel 
+ Insertion</string>
     </property>
    </widget>
   </widget>

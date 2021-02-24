@@ -25,7 +25,6 @@ signals:
     //void report_progress(int);
 
 public slots:
-    //void receive_progress(int);
 
 private slots:
 
@@ -41,6 +40,8 @@ private slots:
 
     void on_pB_viewdata_clicked();
 
+    void on_pB_cancel_clicked();
+
 private:
     Ui::MainWindow *ui;
     int cores = 3;
@@ -50,9 +51,10 @@ private:
     int jobs_percent;
     int threads_working = 0;
     int connection_count = 0;
+    int remote_controller = 0;  // 0 = standard, 1 = cancel.
     std::wstring wdrive;
     QString qdrive;
-    QMutex m_db, m_err, m_log, m_bar;
+    QMutex m_db, m_err, m_log, m_bar, m_namegen;
     int max_progress;
     wstring root_directory = L"F:";  // NOTE: REMOVE HARDCODING LATER
     QString db_qpath = "F:\\SCDA.db";
@@ -88,6 +90,7 @@ private:
     void create_insert_csv_table(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
     void create_insert_csv_subtables(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
     void all_cata_db(QVector<QVector<QString>>&, QMap<QString, int>&);
+    void scan_incomplete_cata(CATALOGUE&);
 };
 
 #endif // MAINWINDOW_H
