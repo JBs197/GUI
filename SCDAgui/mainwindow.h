@@ -52,9 +52,10 @@ private:
     int threads_working = 0;
     int connection_count = 0;
     int remote_controller = 0;  // 0 = standard, 1 = cancel.
+    int judicator_working = 0;
     std::wstring wdrive;
     QString qdrive;
-    QMutex m_db, m_err, m_log, m_bar, m_namegen;
+    QMutex m_db, m_err, m_log, m_bar, m_namegen, m_id;
     int max_progress;
     wstring root_directory = L"F:";  // NOTE: REMOVE HARDCODING LATER
     QString db_qpath = "F:\\SCDA.db";
@@ -66,7 +67,6 @@ private:
     void executor(QSqlQuery&);
     QSqlError executor_select(QString&, QSqlQuery&);
     void initialize_catalogue(CATALOGUE&, QString&, QString&);
-    void bbq();
     QString name_gen();
     void clear_log();
     void reset_db(QString&);
@@ -91,6 +91,9 @@ private:
     void create_insert_csv_subtables(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
     void all_cata_db(QVector<QVector<QString>>&, QMap<QString, int>&);
     void scan_incomplete_cata(CATALOGUE&);
+    void judicator(CATALOGUE&, int&);
+    void insert_catalogue_st(CATALOGUE&, int&);
+    void insert_csvs(CATALOGUE&);
 };
 
 #endif // MAINWINDOW_H

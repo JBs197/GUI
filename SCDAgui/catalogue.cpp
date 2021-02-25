@@ -89,6 +89,13 @@ void CATALOGUE::initialize_table()
     log8(sname + " initialized.\r\n");
 }
 
+void CATALOGUE::initialize_threading(int num)
+{
+    jobs.resize(num);
+    thr_stmts.resize(num, QVector<QVector<QString>>());
+    bot_top.resize(num, vector<int>(2));
+}
+
 // Populates the 'csv_branches' and 'gid_list' vectors.
 void CATALOGUE::make_name_tree()
 {

@@ -32,10 +32,14 @@ class CATALOGUE
     QString ins_csv_row_template;
     int remote_control = 0;  // Directive for the object. 0 = standard, 1 = cancel.
     QVector<QString> gid_want_list;
+    QVector<QVector<QVector<QString>>> thr_stmts;  // Form [thread][statement][template, bind values...]
 
 public:
     explicit CATALOGUE() {}
     ~CATALOGUE() {}
+    vector<int> jobs;
+    vector<vector<int>>bot_top;
+    void initialize_threading(int);
     void set_path(QString&);
     void initialize_table();
     void make_name_tree();
