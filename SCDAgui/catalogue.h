@@ -89,6 +89,8 @@ public:
     int get_status();
     void set_gid_want_list(QVector<QString>&);
     QVector<QString> get_gid_want_list();
+    void add_statements(QVector<QString>&, int);  // NOTE: Mutexing happens within MainWindow, not Catalogue.
+    QVector<QVector<QString>> take_statements(int);  // Form [statement][template, values...]. NOTE: Mutexing in MW.
 };
 
 #endif // CATALOGUE_H

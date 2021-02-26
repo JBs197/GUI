@@ -41,6 +41,10 @@ void MainWindow::initialize()
     create_cata_index_table();  // Even if starting a new database, this meta-table will always exist.
     update_cata_tree();
     build_ui_tree(cata_tree, 2);
+    for (int ii = 0; ii < cores; ii++)
+    {
+        m_jobs.emplace_back();
+    }
 
     clear_log();
     logger("MainWindow initialized.");
@@ -119,7 +123,7 @@ QString MainWindow::sqlerr_enum(QSqlError::ErrorType type)
 }
 void MainWindow::sqlerr(QString qfunc, QSqlError qerror)
 {
-    QString code = qerror.nativeErrorCode();  // RESUME HERE. Database is locking, even with WAL enabled.
+    QString code = qerror.nativeErrorCode();
     qDebug() << "Native error code: " << code;
     string func8 = qfunc.toStdString();
     string name = utf16to8(root_directory) + "\\SCDA Error Log.txt";
@@ -462,6 +466,7 @@ void MainWindow::insert_catalogue_st(CATALOGUE& cata, int& report)
     if (!db.open()) { sqlerr("db.open-insert_catalogue_st", db.lastError()); }
     m_db.unlock();
 
+    /*
     vector<std::thread> peons;
     cata.initialize_threading(cores);
     for (int ii = 0; ii < cores; ii++)
@@ -489,6 +494,7 @@ void MainWindow::insert_catalogue_st(CATALOGUE& cata, int& report)
             th.join();
         }
     }
+    */
     /*
     if (!cancelled)
     {
@@ -507,6 +513,7 @@ void MainWindow::insert_csvs(CATALOGUE& cata)
     int my_id, bot, top;
     int my_status = 0;
     QVector<QVector<QString>> text_vars, data_rows;
+    QVector<QString> statement;
     QString gid, qfile, stmt;
     wstring csv_path;
     m_id.lock();
@@ -536,9 +543,30 @@ void MainWindow::insert_csvs(CATALOGUE& cata)
             text_vars = cata.extract_text_vars(qfile);
             data_rows = cata.extract_data_rows(qfile);
 
-            // RESUME HERE. Have the workers send their statements to judicator.
+            // Prepare the primary row vector of strings.
+            statement.clear();                              // Reset.
+            statement.append(cata.get_primary_template());  // Template first.
+            statement.append(gid);                          // GID second.
+            for (int ii = 0; ii < text_vars.size(); ii++)   // Text variables third.
+            {
+                statement.append("[" + text_vars[ii][1] + "]");
+            }
+            for (int ii = 0; ii < data_rows.size(); ii++)   // Row values fourth.
+            {
+                for (int jj = 1; jj < data_rows[ii].size(); jj++)
+                {
+                    statement.append(data_rows[ii][jj]);
+                }
+            }
+            m_jobs[my_id].lock();                           // MainWindow does the mutexing.
+            cata.add_statements(statement, my_id);       // Add this vector of strings to the list waiting
+            m_jobs[my_id].unlock();                      // to be processed by the judicator.
 
-            insert_primary_row(q, cata, gid, text_vars, data_rows);
+            // Prepare the full CSV table, creation and insertion.
+            statement.clear();
+            statement.append(cata.get_csv_template());
+
+            /*
             create_insert_csv_table(q, cata, gid, data_rows);
             create_insert_csv_subtables(q, cata, gid, data_rows);
 
@@ -546,18 +574,12 @@ void MainWindow::insert_csvs(CATALOGUE& cata)
             report++;
             m_bar.unlock();
             my_report++;
+            */
         }
         else  // Message from the controller thread...
         {
             switch (my_status)
             {
-            case 1:
-                m_bar.lock();
-                report += top - bot + 1 - my_report;
-                m_bar.unlock();
-                my_status = -1;
-                qDebug() << "my_status is " << my_status;
-
             case -1:
                 qDebug() << "Aborting threaded work...";
                 return;

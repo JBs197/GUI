@@ -22,7 +22,6 @@ public:
     void logger(QString);
 
 signals:
-    //void report_progress(int);
 
 public slots:
 
@@ -54,6 +53,7 @@ private:
     int remote_controller = 0;  // 0 = standard, 1 = cancel.
     int judicator_working = 0;
     std::wstring wdrive;
+    vector<mutex> m_jobs;
     QString qdrive;
     QMutex m_db, m_err, m_log, m_bar, m_namegen, m_id;
     int max_progress;
@@ -91,9 +91,9 @@ private:
     void create_insert_csv_subtables(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
     void all_cata_db(QVector<QVector<QString>>&, QMap<QString, int>&);
     void scan_incomplete_cata(CATALOGUE&);
-    void judicator(CATALOGUE&, int&);
-    void insert_catalogue_st(CATALOGUE&, int&);
-    void insert_csvs(CATALOGUE&);
+    void judicator(QVector<QVector<QString>>&, int&, int&);
+    void insert_catalogue_st(int&, int&, QString);
+    void insert_csvs(QVector<QString>&, int&, vector<int>);
 };
 
 #endif // MAINWINDOW_H

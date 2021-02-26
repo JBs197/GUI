@@ -765,6 +765,23 @@ vector<wstring> get_file_path_endings(wstring folder_path, size_t pos0)
     return file_paths;
 }
 
+// Given a folder path, return the number of files within that have the given extension suffix (param needs dot).
+int get_file_path_number(wstring folder_path, wstring file_extension)
+{
+    int count = 0;
+    wstring folder_search = folder_path + L"\\*" + file_extension;
+    WIN32_FIND_DATAW info;
+    HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
+    if (hfile1 == INVALID_HANDLE_VALUE) { winerr(L"FindFirstFile-get_file_path_number"); }
+    do
+    {
+        count++;
+    } while (FindNextFileW(hfile1, &info));
+
+    if (!FindClose(hfile1)) { winwarn(L"FindClose-get_file_path_number"); }
+    return count;
+}
+
 // Given a root folder path, return a vector containing the short names of all subfolders within.
 vector<wstring> get_subfolder_shortnames(wstring root_folder)
 {

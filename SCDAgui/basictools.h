@@ -84,6 +84,7 @@ int download(wstring, wstring, wstring);
 // Given a folder path, return a vector containing the file paths of all files within. Does not list subfolders.
 vector<wstring> get_file_paths(wstring);
 vector<wstring> get_file_path_endings(wstring, size_t);
+int get_file_path_number(wstring, wstring);
 
 // Given a root folder path, return a vector containing the full paths of all subfolders within.
 vector<wstring> get_subfolders(wstring);

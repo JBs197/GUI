@@ -174,6 +174,10 @@ void CATALOGUE::set_gid_want_list(QVector<QString>& gwl)
 {
     gid_want_list = gwl;
 }
+void CATALOGUE::add_statements(QVector<QString>& raw_stmts, int myid)
+{
+    thr_stmts[myid].append(raw_stmts);
+}
 
 // Fetch functions.
 wstring CATALOGUE::get_csv_path(int csv_index)
@@ -268,6 +272,12 @@ int CATALOGUE::get_status()
 QVector<QString> CATALOGUE::get_gid_want_list()
 {
     return gid_want_list;
+}
+QVector<QVector<QString>> CATALOGUE::take_statements(int myid)
+{
+    QVector<QVector<QString>> stmts = thr_stmts[myid];
+    thr_stmts[myid].clear();
+    return stmts;
 }
 
 // Template fabrication functions.
