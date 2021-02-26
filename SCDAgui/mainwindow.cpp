@@ -450,21 +450,112 @@ void MainWindow::update_cata_tree()
 
 
 // DEBUG FUNCTIONS:
-void MainWindow::insert_catalogue_st(CATALOGUE& cata, int& report)
+void MainWindow::judicator(int& control, int& report, QString qyear, QString qname)
 {
-    QVector<QString> gid_list = cata.get_gid_list();
-    int num_gid = gid_list.size();
+    QString VR_root = "D:";
+    QString temp = VR_root + "\\" + qyear + "\\" + qname;
+    wstring cata_wpath = temp.toStdWString();
+    int num_gid = get_file_path_number(cata_wpath, L".csv");
     int workload = num_gid / cores;
     int bot = 0;
     int top = workload - 1;
     bool cancelled = 0;
-    reset_bar(num_gid, "Adding spreadsheets to catalogue   " + cata.get_qname());
+    reset_bar(num_gid, "Adding spreadsheets to catalogue " + qname);
 
+    // Establish the thread's connection to the database.
     m_db.lock();
     db = QSqlDatabase::addDatabase("QSQLITE", "judi");
     db.setDatabaseName(db_qpath);
-    if (!db.open()) { sqlerr("db.open-insert_catalogue_st", db.lastError()); }
+    if (!db.open()) { sqlerr("db.open-judicator", db.lastError()); }
+    QSqlQuery q(db);
     m_db.unlock();
+
+    // Insert this catalogue into the catalogue index.
+    bool fine = q.prepare("INSERT INTO TCatalogueIndex ( Year, Name, Description ) VALUES (?, ?, ?)");
+    if (!fine) { sqlerr("prepare1-judicator", q.lastError()); }
+    q.addBindValue(qyear);
+    q.addBindValue("[" + qname + "]");
+    q.addBindValue("Incomplete");
+    fine = q.exec();
+    if (!fine) { sqlerr("exec1-judicator", q.lastError()); }
+
+    // Launch the worker threads, which will iterate through the CSVs.
+    vector<std::thread> peons;
+    vector<int> controls;
+    controls.assign(cores, 0);
+    vector<int> prompt(3);  // Form [id, bot, top]
+    QVector<QVector<QString>> all_thr_stmts(cores, QVector<QString>());  // Form [thread][statements]
+    for (int ii = 0; ii < cores; ii++)
+    {
+        prompt[0] = ii;
+        prompt[1] = bot;
+        prompt[2] = top;
+        std::thread thr(&MainWindow::insert_csvs, std::ref(all_thr_stmts[ii]), std::ref(controls[ii]), cata_wpath, prompt);
+        peons.push_back(std::move(thr));
+        bot += workload;
+        if (ii < cores - 1) { top += workload; }
+        else { top = num_gid - 1; }
+    }
+
+    // Create the catalogue's primary table.
+    while (all_thr_stmts[0].size() < 2) { Sleep(50); }
+    QString cata_desc = all_thr_stmts[0][1];
+    m_jobs[0].lock();
+    temp = all_thr_stmts[0][0];
+    all_thr_stmts[0].remove(0, 2);
+    m_jobs[0].unlock();
+    fine = q.prepare(temp);
+    if (!fine) { sqlerr("prepare2-judicator", q.lastError()); }
+    fine = q.exec();
+    if (!fine) { sqlerr("exec2-judicator", q.lastError()); }
+
+    // Loop through the worker threads, inserting their statements into the database.
+    int active_thread = 0;
+    int pile;
+    QVector<QString> desk;
+    while (control == 0 && jobs_done < jobs_max)
+    {
+        pile = all_thr_stmts[active_thread].size();
+        if (pile > 0)
+        {
+            m_jobs[active_thread].lock();
+            desk = all_thr_stmts[active_thread];
+            all_thr_stmts[active_thread].clear();
+            m_jobs[active_thread].unlock();
+
+            for (int ii = 0; ii < desk.size(); ii++)
+            {
+                fine = q.prepare(desk[ii]);
+                if (!fine) { sqlerr("prepare3-judicator", q.lastError()); }
+                fine = q.exec();
+                if (!fine) { sqlerr("exec3-judicator", q.lastError()); }
+            }
+        }
+        active_thread++;
+        if (active_thread >= cores) { active_thread = 0; }
+    }
+    for (auto& th : peons)
+    {
+        if (th.joinable())
+        {
+            th.join();
+        }
+    }
+    if (control == 0)
+    {
+        temp = "[" + qname + "]";
+        fine = q.prepare("UPDATE TCatalogueIndex SET Description = ? WHERE Name = ?");
+        if (!fine) { sqlerr("prepare4-judicator", q.lastError()); }
+        q.addBindValue(cata_desc);
+        q.addBindValue(temp);
+        fine = q.exec();
+        if (!fine) { sqlerr("exec4-judicator", q.lastError()); }
+        logger("Catalogue " + qname + " completed its CSV insertion.");
+    }
+    else
+    {
+        logger("Catalogue " + qname + " had its CSV insertion cancelled.");
+    }
 
     /*
     vector<std::thread> peons;
@@ -508,34 +599,34 @@ void MainWindow::insert_catalogue_st(CATALOGUE& cata, int& report)
     */
     int bbq = 1;
 }
-void MainWindow::insert_csvs(CATALOGUE& cata)
+void MainWindow::insert_csvs(QVector<QString>& thr_stmts, int& control, wstring cata_wpath, vector<int> prompt)
 {
-    int my_id, bot, top;
+    int my_id = prompt[0];
     int my_status = 0;
     QVector<QVector<QString>> text_vars, data_rows;
-    QVector<QString> statement;
-    QString gid, qfile, stmt;
+    QString gid, qfile, stmt, temp;
     wstring csv_path;
-    m_id.lock();
-    for (int ii = 0; ii < (int)cata.jobs.size(); ii++)
+    int pos1;
+
+    // Prepare the catalogue helper object.
+    CATALOGUE cata;
+    cata.set_wpath(cata_wpath);
+    cata.initialize_table();
+    QString primary_stmt = cata.create_primary_table();
+    cata.insert_primary_columns_template();
+    cata.create_csv_tables_template();
+    cata.insert_csv_row_template();
+
+    if (my_id == 0)
     {
-        if (cata.jobs[ii] < 0)
-        {
-            my_id = -1 * cata.jobs[ii];
-            my_id--;
-            cata.jobs[ii] = 0;
-        }
+        thr_stmts.append(primary_stmt);
+        thr_stmts.append(cata.get_description());
     }
-    m_id.unlock();
-    bot = cata.bot_top[my_id][0];
-    top = cata.bot_top[my_id][1];
 
-
-
-    for (int ii = bot; ii <= top; ii++)  // Iterating by CSV...
+    for (int ii = prompt[1]; ii <= prompt[2]; ii++)  // Iterating by CSV...
     {
         my_status = cata.get_status();
-        if (!my_status)  // Under normal circumstances...
+        if (!control)  // Under normal circumstances...
         {
             gid = cata.get_gid(ii);
             csv_path = cata.get_csv_path(ii);
@@ -544,23 +635,27 @@ void MainWindow::insert_csvs(CATALOGUE& cata)
             data_rows = cata.extract_data_rows(qfile);
 
             // Prepare the primary row vector of strings.
-            statement.clear();                              // Reset.
-            statement.append(cata.get_primary_template());  // Template first.
-            statement.append(gid);                          // GID second.
-            for (int ii = 0; ii < text_vars.size(); ii++)   // Text variables third.
+            stmt = cata.get_primary_template();
+            pos1 = stmt.lastIndexOf("VALUES");
+            pos1 = stmt.indexOf('?', pos1);
+            stmt.replace(pos1, 1, gid);
+            for (int ii = 0; ii < text_vars.size(); ii++)
             {
-                statement.append("[" + text_vars[ii][1] + "]");
+                temp = "[" + text_vars[ii][1] + "]";
+                pos1 = stmt.indexOf('?', pos1);
+                stmt.replace(pos1, 1, temp);
             }
-            for (int ii = 0; ii < data_rows.size(); ii++)   // Row values fourth.
+            for (int ii = 0; ii < data_rows.size(); ii++)
             {
                 for (int jj = 1; jj < data_rows[ii].size(); jj++)
                 {
-                    statement.append(data_rows[ii][jj]);
+                    pos1 = stmt.indexOf('?', pos1);
+                    stmt.replace(pos1, 1, data_rows[ii][jj]);
                 }
             }
-            m_jobs[my_id].lock();                           // MainWindow does the mutexing.
-            cata.add_statements(statement, my_id);       // Add this vector of strings to the list waiting
-            m_jobs[my_id].unlock();                      // to be processed by the judicator.
+            m_jobs[my_id].lock();
+            thr_stmts.append(stmt);
+            m_jobs[my_id].unlock();                    // RESUME HERE
 
             // Prepare the full CSV table, creation and insertion.
             statement.clear();
@@ -586,11 +681,6 @@ void MainWindow::insert_csvs(CATALOGUE& cata)
             }
         }
     }
-}
-void MainWindow::judicator(CATALOGUE& cata, int& report)
-{
-    int num1 = cata.jobs.size();
-    vector<int> peons_work(num1, 0);
 }
 
 
@@ -1057,13 +1147,12 @@ void MainWindow::on_pB_benchmark_clicked()
     qdrive = "F:";
     QString cata_path = "F:\\3067\\97-570-X1981005";
     reset_db(db_qpath);
-    CATALOGUE cata;
     QString qyear = "3067";
     QString qname = "97-570-X1981005";
     int report = 0;
-    initialize_catalogue(cata, qyear, qname);
+    int control = 0;  // 0 = Standard, 1 = Stop.
     judicator_working = 1;
-    std::thread judi(&MainWindow::insert_catalogue_st, std::ref(cata), std::ref(report));
+    std::thread judi(&MainWindow::insert_catalogue_st, std::ref(control), std::ref(report), qyear, qname);
     while (judicator_working)
     {
         QCoreApplication::processEvents();
@@ -1071,7 +1160,7 @@ void MainWindow::on_pB_benchmark_clicked()
         update_bar();
         if (remote_controller)
         {
-            cata.cancel_insertion();
+            control = 1;
         }
         std::this_thread::sleep_for (std::chrono::milliseconds(50));
     }

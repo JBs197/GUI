@@ -29,6 +29,11 @@ void CATALOGUE::set_path(QString& cata_path)
     qpath = cata_path;
     wpath = cata_path.toStdWString();
 }
+void CATALOGUE::set_wpath(wstring& cata_wpath)
+{
+    wpath = cata_wpath;
+    qpath = QString::fromStdWString(cata_wpath);
+}
 
 // Load the catalogue's significant variable names into the object.
 void CATALOGUE::initialize_table()

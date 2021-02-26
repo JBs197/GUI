@@ -91,9 +91,9 @@ private:
     void create_insert_csv_subtables(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
     void all_cata_db(QVector<QVector<QString>>&, QMap<QString, int>&);
     void scan_incomplete_cata(CATALOGUE&);
-    void judicator(QVector<QVector<QString>>&, int&, int&);
-    void insert_catalogue_st(int&, int&, QString);
-    void insert_csvs(QVector<QString>&, int&, vector<int>);
+    void judicator(int&, int&, QString, QString);
+    //void insert_catalogue_st(int&, int&, QString, QString);
+    void insert_csvs(QVector<QString>&, int&, wstring, vector<int>);
 };
 
 #endif // MAINWINDOW_H
