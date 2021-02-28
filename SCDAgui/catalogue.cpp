@@ -46,7 +46,7 @@ void CATALOGUE::initialize_table()
     wstring folder_search = wpath + L"\\*.csv";
     WIN32_FIND_DATAW info;
     HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
-    if (hfile1 == INVALID_HANDLE_VALUE) { winerr(L"FindFirstFile-cata.initialize_table"); }
+    if (hfile1 == INVALID_HANDLE_VALUE) { winerr_bt("FindFirstFile-cata.initialize_table"); }
     wstring sample_name = wpath + L"\\" + info.cFileName;
 
     qfile = q_memory(sample_name);
@@ -90,8 +90,7 @@ void CATALOGUE::initialize_table()
     column_titles = model.get_column_titles();
     row_titles = model.get_row_titles();
 
-    if (!FindClose(hfile1)) { warn(L"FindClose-cata.initialize_table"); }
-    log8(sname + " initialized.\r\n");
+    if (!FindClose(hfile1)) { winerr_bt("FindClose-cata.initialize_table"); }
 }
 
 void CATALOGUE::initialize_threading(int num)
@@ -543,7 +542,7 @@ QVector<QVector<QString>> CATALOGUE::extract_data_rows(QString& qfile)
                     pos3 = qfile.indexOf('\r', pos1 + 1);  // ... confirm end of line.
                     if (pos3 > nl2)
                     {
-                        err8("pos error in extract_classic_rows");
+                        err_bt("pos error in extract_classic_rows");
                     }
                 }
                 temp1 = qfile.mid(pos1 + 1, pos3 - pos1 - 1);
@@ -564,8 +563,11 @@ QVector<QVector<QString>> CATALOGUE::extract_data_rows(QString& qfile)
 
 void CATALOGUE::print_stuff()
 {
-    qprinter("F:\\primary_table_column_template.txt", primary_table_column_template);
-    qprinter("F:\\csv_tables_template.txt", csv_tables_template);
-    qprinter("F:\\ins_csv_row_template.txt", ins_csv_row_template);
+    QString path1 = "F:\\primary_table_column_template.txt";
+    QString path2 = "F:\\csv_tables_template.txt";
+    QString path3 = "F:\\ins_csv_row_template.txt";
 
 }
+
+template void delete_file<string>(string);
+template void delete_file<wstring>(wstring);

@@ -289,7 +289,7 @@ void CSV::extract_model_rows(int pos0)
         model_rows.append(QVector<QString>());
         row_index = model_rows.size() - 1;
         indentation = index_card(space_index, spaces);
-        if (indentation < 0) { err(L"index_card-csv.extract_model_rows"); }
+        if (indentation < 0) { err_bt("index_card-csv.extract_model_rows"); }
 
         temp2.clear();
         for (int ii = 0; ii < indentation; ii++)
@@ -312,7 +312,7 @@ void CSV::extract_model_rows(int pos0)
                     pos3 = qfile.indexOf('\r', pos1 + 1);  // ... confirm end of line.
                     if (pos3 > nl2)
                     {
-                        err8("pos error in extract_classic_rows");
+                        err_bt("pos error in extract_classic_rows");
                     }
                 }
                 temp1 = qfile.mid(pos1 + 1, pos3 - pos1 - 1);
@@ -598,5 +598,6 @@ void CSV::insert_row_template(QString& work)
     work.append(" )");
 }
 
-
+template void delete_file<string>(string);
+template void delete_file<wstring>(wstring);
 

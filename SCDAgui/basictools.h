@@ -1,10 +1,8 @@
+#pragma once
 #ifndef BASICTOOLS_H
 #define BASICTOOLS_H
 
-//#include <chrono>
-//#include <ctime>
 #include <windows.h>
-//#include <locale>
 #include <wininet.h>
 #include <winuser.h>
 #include <thread>
@@ -28,32 +26,26 @@ wstring utf8to16(string);
 // Return a timestamp from the system clock.
 string timestamperA();
 
+void err_bt(string);
+void winerr_bt(string);
+
 // Determine the type of number contained within the given string. 0 = error, 1 = int, 2 = double.
 int qnum_test(QString);
 
 // Return a piece of the original vector, defined by the first and last positions.
 QVector<QString> string_vector_slicer(QVector<QString>&, int, int);
 
-// Make an entry into the error log. If severe, terminate the application.
-void err(wstring);
-void err8(string);
-//void sqlerr(wstring, QSqlError);
-void winerr(wstring);
-void warn(wstring);
-void warn8(string);
-void qwarn(QString);
-void sqlwarn(wstring, QSqlError);
-void winwarn(wstring);
+//template<typename S> void err(S&);
+//template<typename S> void winerr(S&);
+//template<typename S> void warn(S&);
+//template<> void warn<wstring>(wstring&);
+QString sqlerr_enum(QSqlError::ErrorType);
+void sqlerr(QString&, QSqlError);
 
-// Make an entry into the process log, for the most recent runtime.
-void log(wstring);
-void log8(string);
-void qlog(QString);
+//template<typename S> void log(S);
 
-// Remove string chars which cause problems with SQL formatting. Returns the number of blank spaces which
-// were present at the string's start, indicating the string is a subheading or subsubheading.
-// Mode 0 = identifier wstring, mode 1 = value wstring
-int clean(wstring&, int);
+//template<typename S> int clean(S&, int);
+//template<> int clean<QString>(QString&, int);
 int qclean(QString&, int);
 
 // Given an INSERT statement template QString and the position of a parameter char ('?') inside it,
@@ -61,19 +53,68 @@ int qclean(QString&, int);
 int insert_val(QString&, int, QString);
 int insert_text(QString&, int, QString);
 
-// Read into memory a local file.
+// From a given file path, writes that file's full content to the referenced (empty) string.
+// Currently, can accomodate UTF8 strings, UTF16 wstrings, and QStrings.
+//template<typename S1, typename S2> void load(S1&, S2&);
 wstring bin_memory(HANDLE&);
 QString q_memory(wstring&);
 wstring w_memory(wstring&);
 
-// Given a full path name and a string, print that string to file (UTF-8 encoding).
-void sprinter(string, string&);
-void wprinter(wstring, wstring&);
-void qprinter(QString, QString&);
+//template<typename S> void printer(S&, S&);
 
 // Given a full path name, delete the file/folder.
-void delete_file(wstring);
-void delete_folder(wstring);
+template<typename S> void delete_file(S);
+template<> void delete_file<string>(string);
+template<> void delete_file<wstring>(wstring);
+/*
+template<> void delete_file<string>(string filename)
+{
+    HANDLE hfile = CreateFileA(filename.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr_bt("CreateFile-delete_sfile"); }
+    if (!DeleteFileA(filename.c_str())) { winerr_bt("DeleteFile-delete_sfile"); }
+    if (!CloseHandle(hfile)) { winerr_bt("CloseHandle-delete_sfile"); }
+}
+template<> void delete_file<wstring>(wstring filename)
+{
+    HANDLE hfile = CreateFileW(filename.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr_bt("CreateFile-delete_wfile"); }
+    if (!DeleteFileW(filename.c_str())) { winerr_bt("DeleteFile-delete_wfile"); }
+    if (!CloseHandle(hfile)) { winerr_bt("CloseHandle-delete_wfile"); }
+}
+*/
+template<typename S> void delete_folder(S) {}
+/*
+template<> void delete_folder<string>(string folder_name)
+{
+    string folder_search = folder_name + "\\*";
+    WIN32_FIND_DATAA info;
+    HANDLE hfile1 = FindFirstFileA(folder_search.c_str(), &info);
+    string file_name;
+    do
+    {
+        file_name = folder_name + "\\" + info.cFileName;
+        if (file_name.back() != '.') { delete_file(file_name); }
+    } while (FindNextFileA(hfile1, &info));
+
+    BOOL yesno = RemoveDirectoryA(folder_name.c_str());
+    if (!yesno) { winerr_bt("RemoveDirectory-delete_sfolder"); }
+}
+template<> void delete_folder<wstring>(wstring folder_name)
+{
+    wstring folder_search = folder_name + L"\\*";
+    WIN32_FIND_DATAW info;
+    HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
+    wstring file_name;
+    do
+    {
+        file_name = folder_name + L"\\" + info.cFileName;
+        if (file_name.back() != L'.') { delete_file(file_name); }
+    } while (FindNextFileW(hfile1, &info));
+
+    BOOL yesno = RemoveDirectoryW(folder_name.c_str());
+    if (!yesno) { winerr_bt("RemoveDirectory-delete_wfolder"); }
+}
+*/
 
 // Contains pre-programmed responses to certain automated events during server-client communications.
 void CALLBACK call(HINTERNET, DWORD_PTR, DWORD, LPVOID, DWORD);
@@ -96,5 +137,6 @@ int index_card(vector<int>&, int);
 
 // Returns a CSV's data rows.
 QVector<QVector<QString>> extract_csv_data_rows(QString&, QVector<QString>, bool);
+
 
 #endif

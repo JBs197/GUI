@@ -1071,3 +1071,947 @@ void MainWindow::populate_cata_piece(CATALOGUE worker, int bot, int top)
     }
 }
 
+while (jobs_done < jobs_max)
+{
+	aol = PeekMessageW(&mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
+	if (aol)
+	{
+		enigma = mailbox.message;
+		enigma -= WM_APP;
+		qDebug() << "Received message: " << enigma;
+		update_bar();
+	}
+	QCoreApplication::processEvents();
+}
+	
+void MainWindow::subtables_st(CATALOGUE& cat)
+{
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString stmt, name;
+    int pos1;
+    int num_gid = gid_list.size();
+    reset_bar(num_gid);
+    for (int ii = 0; ii < num_gid; ii++)
+    {
+        for (int jj = 0; jj < tree.size(); jj++)
+        {
+            name = cat.sublabelmaker(gid_list[ii], tree[jj]);
+            stmt = sub_template;
+            pos1 = stmt.indexOf("!!!");
+            stmt.replace(pos1, 3, name);
+
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                sqlerr("mainwindow.subtables_st for " + name, qerror);
+            }
+        }
+        update_bar();
+    }
+}
+
+void MainWindow::subtables_mapped(CATALOGUE& cat)
+{
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString qname = cat.get_qname();
+    DWORD compass = GetCurrentThreadId();
+    LPMSG mailbox = new MSG;
+    int num_gid = gid_list.size();
+    reset_bar(num_gid);
+
+    auto insert_subtable = [=] (QString gid)
+    {
+        QString name, stmt, temp;
+        int pos1, ancestry, cheddar;
+        UINT message;
+        for (int jj = 0; jj < tree.size(); jj++)
+        {
+            name = "T" + qname + "$" + gid;
+            ancestry = tree[jj][0].size();
+            cheddar = 2;
+            for (int ii = 0; ii < ancestry; ii++)
+            {
+                for (int jj = 0; jj < cheddar; jj++)
+                {
+                    name += "$";
+                }
+                cheddar++;
+                temp = QString::number(tree[jj][0][ii]);
+                name += temp;
+            }
+
+            stmt = sub_template;
+            pos1 = stmt.indexOf("!!!");
+            stmt.replace(pos1, 3, name);
+
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                sqlerr("mainwindow.subtables_mapped for " + name, qerror);
+            }
+        }
+        pos1 = gid.toInt();
+        pos1 -= 1375000;
+        message = WM_APP + pos1;
+        if (!PostThreadMessageW(compass, message, 0, 0))
+        {
+            winwarn(L"subtables_mt");
+        }
+    };
+
+    QFuture<void> bit_of_nothing = QtConcurrent::map(gid_list, insert_subtable);
+    int enigma;
+    bool aol = 0;
+    while (!bit_of_nothing.isFinished())
+    {
+        QThread::msleep(100);
+        aol = PeekMessageW(mailbox, NULL, WM_APP, WM_APP + 15000, PM_REMOVE);
+        if (aol)
+        {
+            enigma = mailbox->message;
+            enigma -= WM_APP;
+            qDebug() << "Received message: " << enigma;
+            update_bar();
+        }
+    }
+}
+
+void MainWindow::nobles_st(QVector<QVector<QString>>& stmts)
+{
+    for (int ii = 0; ii < stmts.size(); ii++)
+    {
+        m_executor.lockForWrite();
+        QSqlError qerror = executor(stmts[ii][0]);
+        m_executor.unlock();
+        if (qerror.isValid())
+        {
+            sqlerr("mainwindow.nobles_st for " + stmts[ii][1], qerror);
+        }
+    }
+    logger(stmts[0][1] + " and CSV nobles were inserted into the database.");
+}
+
+// Creates database tables for a catalogue's primary table and all full-CSV subtables.
+void MainWindow::nobles_st(CATALOGUE& cat)
+{
+    QElapsedTimer timer;
+    timer.start();
+    QVector<QVector<QString>> noble_statements = cat.get_nobles();
+    QString qname = cat.get_qname();
+    int report = 0;
+    double gids_per_percent = (double)noble_statements.size() / 100.0;
+    reset_bar(100, "Creating CSV tables for " + qname + "...");
+
+    auto create_nobles = [=] (int& report)
+    {
+        QString stmt, tname;
+        double gids_done = 0.0;
+        for (int ii = 0; ii < noble_statements.size(); ii++)
+        {
+            stmt = noble_statements[ii][0];
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                tname = noble_statements[ii][1];
+                sqlerr("mainwindow.nobles_mt for " + tname, qerror);
+            }
+            gids_done += 1.0;
+            if (gids_done >= gids_per_percent)
+            {
+                m_bar.lock();
+                report++;
+                m_bar.unlock();
+                gids_done -= gids_per_percent;
+            }
+        }
+        m_bar.lock();
+        report++;
+        m_bar.unlock();
+    };
+
+    threads_working = 1;
+    std::thread thr(create_nobles, ref(report));
+    while (threads_working)
+    {
+        jobs_done = report;
+        ui->progressBar->setValue(jobs_done);
+        QCoreApplication::processEvents();
+        if (report >= 100)
+        {
+            if (jobs_done < 100)
+            {
+                jobs_done = 100;
+                ui->progressBar->setValue(jobs_done);
+            }
+            threads_working = 0;
+        }
+    }
+    if (thr.joinable())
+    {
+        thr.join();
+    }
+    qDebug() << "nobles_mt " << timer.restart();
+    logger(qname + " and CSV nobles were inserted into the database.");
+}
+
+// For a given catalogue, for all CSVs, for all tables/subtables,
+// insert all row values into the database.
+void MainWindow::populate_cata_mt(int cata_index)
+{
+    QVector<QString> gid_list = binder[cata_index].get_gid_list();
+    wstring csv_trunk = binder[cata_index].get_csv_trunk();
+    vector<wstring> csv_branches = binder[cata_index].get_csv_branches();
+    QVector<QString> column_titles = binder[cata_index].get_column_titles();
+    QVector<QString> row_titles = binder[cata_index].get_row_titles();
+    QVector<QVector<QVector<int>>> tree = binder[cata_index].get_tree();
+    QString primary_template = binder[cata_index].get_primary_columns_template();
+    QString qname = binder[cata_index].get_qname();
+    QVector<QVector<QString>> text_variables = binder[cata_index].get_model_text_variables();
+    bool multi_column;
+    if (column_titles.size() > 2)
+    {
+        multi_column = 1;
+    }
+    else
+    {
+        multi_column = 0;
+    }
+
+    int glist = binder[cata_index].get_gid_size();
+    int workload = glist / cores;
+    int bot = 0;
+    int top = workload - 1;
+    double gids_per_percent = (double)glist / 100.0;
+    reset_bar(100, "Inserting row values for catalogue " + qname + "...");
+    int report = 0;
+
+    auto populate_cata_piece = [=] (int bot, int top, int& progress)  // Interval is inclusive.
+    {
+        QVector<QVector<QString>> rows;
+        QVector<QVector<QString>> my_text_vars = text_variables;
+        QString qfile, stmt, debug;
+        wstring csv_path;
+        QString temp, temp2, temp3;
+        double gids_done = 0.0;
+        int my_progress = 0;
+        DWORD my_thread_id = GetCurrentThreadId();
+        int pos1, pos2;
+
+        for (int ii = bot; ii <= top; ii++)  // For every assigned CSV...
+        {
+            csv_path = csv_trunk + csv_branches[ii];
+            qfile = q_memory(csv_path);
+            rows = extract_csv_data_rows(qfile, row_titles, multi_column);
+            stmt = primary_template;
+
+            // Insert this CSV's values into the catalogue's primary table.
+            pos1 = stmt.lastIndexOf("VALUES");
+            pos2 = pos1;
+            pos1 = stmt.indexOf('?', pos1);
+            pos1 = insert_val(stmt, pos1, gid_list[ii]);  // GID is always first.
+
+            update_text_vars(my_text_vars, qfile);
+            for (int jj = 0; jj < my_text_vars.size(); jj++)
+            {
+                pos1 = insert_val(stmt, pos1, my_text_vars[jj][1]);
+            }
+
+            for (int jj = 0; jj < rows.size(); jj++)
+            {
+                for (int kk = 1; kk < rows[jj].size(); kk++)
+                {
+                    pos1 = insert_val(stmt, pos1, rows[jj][kk]);
+                }
+            }
+
+            m_executor.lockForWrite();
+            QSqlError qerror = executor(stmt);
+            m_executor.unlock();
+            if (qerror.isValid())
+            {
+                temp = QString::fromStdWString(csv_branches[ii]);
+                sqlerr("mainwindow.populate_cata_piece for " + temp, qerror);
+            }
+
+            gids_done += 1.0;
+            if (gids_done >= gids_per_percent)
+            {
+                m_bar.lock();
+                progress++;
+                m_bar.unlock();
+                my_progress++;
+                qDebug() << "Updated my progress to " << my_progress << " from " << my_thread_id;
+                gids_done -= gids_per_percent;
+            }
+        }
+    };
+
+    vector<std::thread> tapestry;
+    threads_working = 1;
+    for (int ii = 0; ii < cores; ii++)
+    {
+        if (ii < cores - 1)
+        {
+            std::thread thr(populate_cata_piece, bot, top, ref(report));
+            tapestry.push_back(std::move(thr));
+            bot += workload;
+            top += workload;
+        }
+        else
+        {
+            std::thread thr(populate_cata_piece, bot, glist - 1, ref(report));
+            tapestry.push_back(std::move(thr));
+        }
+    }
+    while (threads_working)
+    {
+        jobs_done = report;
+        ui->progressBar->setValue(jobs_done);
+        QCoreApplication::processEvents();
+        if (report >= 100)
+        {
+            if (jobs_done < 100)
+            {
+                jobs_done = 100;
+                ui->progressBar->setValue(jobs_done);
+            }
+            threads_working = 0;
+        }
+    }
+    for (auto& th : tapestry)
+    {
+        if (th.joinable())
+        {
+            th.join();
+        }
+    }
+    logger("Inserted all data rows for catalogue " + qname);
+}
+
+// Creates all database sub-CSV subtables for a catalogue.
+// st = single-threaded, mt = multithreaded, mapped = Qt concurrent
+void MainWindow::subtables_mt(CATALOGUE& cat)
+{
+    QVector<QVector<QVector<int>>> tree = cat.get_tree();
+    QVector<QString> gid_list = cat.get_gid_list();
+    QString sub_template = cat.get_create_sub_template();
+    QString qname = cat.get_qname();
+    int num_gid = gid_list.size();
+    int workload = gid_list.size() / cores;
+    int bot = 0;
+    int top = workload - 1;
+    reset_bar(100, "Creating subtables for " + qname + "...");
+    int report = 0;
+    double gids_per_percent = (double)num_gid / 100.0;
+
+    auto insert_subtable_gid = [=] (int bot, int top, int& report)  // Interval is inclusive.
+    {
+        QString name, stmt, temp;
+        int pos1, ancestry, cheddar;
+        double gids_done = 0.0;
+        for (int ii = bot; ii <= top; ii++)
+        {
+            for (int jj = 0; jj < tree.size(); jj++)
+            {
+                name = "T" + qname + "$" + gid_list[ii];
+                ancestry = tree[jj][0].size();
+                cheddar = 2;
+                for (int ii = 0; ii < ancestry; ii++)
+                {
+                    for (int jj = 0; jj < cheddar; jj++)
+                    {
+                        name += "$";
+                    }
+                    cheddar++;
+                    temp = QString::number(tree[jj][0][ii]);
+                    name += temp;
+                }
+
+                stmt = sub_template;
+                pos1 = stmt.indexOf("!!!");
+                stmt.replace(pos1, 3, name);
+
+                m_executor.lockForWrite();
+                QSqlError qerror = executor(stmt);
+                m_executor.unlock();
+                if (qerror.isValid())
+                {
+                    sqlerr("mainwindow.subtables_mt for " + name, qerror);
+                }
+            }
+            gids_done += 1.0;
+            if (gids_done >= gids_per_percent)
+            {
+                m_bar.lock();
+                report++;
+                m_bar.unlock();
+                gids_done -= gids_per_percent;
+            }
+        }
+    };
+
+    vector<std::thread> tapestry;
+    for (int ii = 0; ii < cores; ii++)
+    {
+        if (ii < cores - 1)
+        {
+            std::thread thr(insert_subtable_gid, bot, top, ref(report));
+            tapestry.push_back(std::move(thr));
+            bot += workload;
+            top += workload;
+        }
+        else
+        {
+            std::thread thr(insert_subtable_gid, bot, gid_list.size() - 1, ref(report));
+            tapestry.push_back(std::move(thr));
+        }
+    }
+    while (report < 100)
+    {
+        jobs_done = report;
+        ui->progressBar->setValue(jobs_done);
+        QCoreApplication::processEvents();
+    }
+    for (auto& th : tapestry)
+    {
+        if (th.joinable())
+        {
+            th.join();
+        }
+    }
+
+    logger("Inserted all tables for catalogue " + cat.get_qname());
+}
+
+void MainWindow::create_csv_tables(CATALOGUE& cata, QString gid)
+{
+    QVector<QVector<QVector<int>>> csv_tree = cata.get_tree();
+    QString csv_template = cata.get_csv_template();
+    QString qname = cata.get_qname();
+    QString stmt, tname;
+    int pos1;
+
+    // Create the full CSV table.
+    stmt = csv_template;
+    tname = "T" + qname + "$" + gid;
+    pos1 = stmt.indexOf("!!!");
+    stmt.replace(pos1, 3, tname);
+    m_executor.lockForWrite();
+    QSqlError qerror = executor(stmt);
+    m_executor.unlock();
+    if (qerror.isValid())
+    {
+        sqlerr("mainwindow.create_csv_tables for " + tname, qerror);
+    }
+
+    // Create all the CSV subtables.
+    for (int ii = 0; ii < csv_tree.size(); ii++)
+    {
+        stmt = csv_template;
+        tname = cata.sublabelmaker(gid, csv_tree[ii]);
+        pos1 = stmt.indexOf("!!!");
+        stmt.replace(pos1, 3, tname);
+        m_executor.lockForWrite();
+        QSqlError qerror = executor(stmt);
+        m_executor.unlock();
+        if (qerror.isValid())
+        {
+            sqlerr("mainwindow.create_csv_tables for " + tname, qerror);
+        }
+    }
+}
+void MainWindow::populate_csv_tables(CATALOGUE& cata, int csv_index)
+{
+    wstring csv_path = cata.get_csv_path(csv_index);
+    QString qfile = q_memory(csv_path);
+    QString gid = cata.get_gid(csv_index);
+    QString qname = cata.get_qname();
+    QString tname;
+    QVector<QVector<QString>> text_vars = cata.extract_text_vars(qfile);
+    QVector<QVector<QString>> rows = cata.extract_data_rows(qfile);
+    int pos1;
+    QSqlQuery query;
+
+    // Insert this CSV's values into the catalogue's primary table.
+    QString stmt = cata.get_primary_template();
+    pos1 = stmt.lastIndexOf("VALUES");
+    pos1 = stmt.indexOf('?', pos1);
+    pos1 = insert_val(stmt, pos1, gid);  // GID is always first.
+    for (int ii = 0; ii < text_vars.size(); ii++)
+    {
+        pos1 = insert_val(stmt, pos1, text_vars[ii][1]);
+    }
+    for (int ii = 0; ii < rows.size(); ii++)
+    {
+        for (int jj = 1; jj < rows[ii].size(); jj++)
+        {
+            pos1 = insert_val(stmt, pos1, rows[ii][jj]);
+        }
+    }
+    m_executor.lockForWrite();
+    QSqlError qerror = executor(stmt);
+    m_executor.unlock();
+    if (qerror.isValid())
+    {
+        sqlerr("mainwindow.populate_csv_tables for T" + qname, qerror);
+    }
+
+    // Insert this CSV's values into its full table.
+    stmt = cata.get_csv_template();
+    pos1 = stmt.indexOf("!!!");
+    tname = "T" + qname + "$" + gid;
+    stmt.replace(pos1, 3, tname);
+    pos1 = stmt.lastIndexOf("VALUES");
+    pos1 = stmt.indexOf('?', pos1);
+    for (int ii = 0; ii < text_vars.size(); ii++)
+    {
+        pos1 = insert_val(stmt, pos1, text_vars[ii][1]);
+    }
+    for (int ii = 0; ii < rows.size(); ii++)
+    {
+        for (int jj = 1; jj < rows[ii].size(); jj++)
+        {
+            pos1 = insert_val(stmt, pos1, rows[ii][jj]);
+        }
+    }
+    m_executor.lockForWrite();
+    qerror = executor(stmt);
+    m_executor.unlock();
+    if (qerror.isValid())
+    {
+        sqlerr("mainwindow.populate_csv_tables for T" + qname, qerror);
+    }
+
+    // Insert this CSV's values into its subtables.
+
+
+}
+
+// Return a unique name for a new database connection.
+QString MainWindow::name_gen()
+{
+    m_namegen.lock();
+    QString num;
+    QString name = "Connection" + num.number(connection_count);
+    connection_count++;
+    m_namegen.unlock();
+    return name;
+}
+
+// Given a full path name and a string, print that string to file (UTF-8 encoding).
+void sprinter(string full_path, string& content)
+{
+    HANDLE hfile = CreateFileA(full_path.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, CREATE_ALWAYS, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-sprinter"); }
+    DWORD bytes_written;
+    DWORD file_size = (DWORD)content.size();
+    if (!WriteFile(hfile, content.c_str(), file_size, &bytes_written, NULL)) { winerr(L"WriteFile-sprinter"); }
+    if (!CloseHandle(hfile)) { winerr(L"CloseHandle-sprinter"); }
+}
+void wprinter(wstring full_path, wstring& content)
+{
+    string path8 = utf16to8(full_path);
+    string content8 = utf16to8(content);
+    HANDLE hfile = CreateFileA(path8.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, CREATE_ALWAYS, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-wprinter"); }
+    DWORD bytes_written;
+    DWORD file_size = (DWORD)content8.size();
+    if (!WriteFile(hfile, content8.c_str(), file_size, &bytes_written, NULL)) { winerr(L"WriteFile-wprinter"); }
+    if (!CloseHandle(hfile)) { winerr(L"CloseHandle-wprinter"); }
+}
+void qprinter(QString full_path, QString& content)
+{
+    string path8 = full_path.toStdString();
+    string content8 = content.toStdString();
+    HANDLE hfile = CreateFileA(path8.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, CREATE_ALWAYS, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-qprinter"); }
+    DWORD bytes_written;
+    DWORD file_size = (DWORD)content8.size();
+    if (!WriteFile(hfile, content8.c_str(), file_size, &bytes_written, NULL)) { winerr(L"WriteFile-qprinter"); }
+    if (!CloseHandle(hfile)) { winerr(L"CloseHandle-qprinter"); }
+}
+
+// Make an entry into the error log. If severe, terminate the application.
+void err8(string func8)
+{
+    string name = db_root8 + "\\SCDA Error Log.txt";
+    string message = timestamperA() + " Generic error: " + func8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+    exit(EXIT_FAILURE);
+}
+void winerr(wstring func)
+{
+    DWORD num = GetLastError();
+    LPSTR buffer = new CHAR[512];
+    string mod = "wininet.dll";
+    LPCSTR modul = mod.c_str();
+    FormatMessageA((FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_FROM_HMODULE), GetModuleHandleA(modul), num, 0, buffer, 512, NULL);
+    string winmessage(buffer, 512);
+    delete[] buffer;
+    string func8 = utf16to8(func);
+    string name = db_root8 + "\\SCDA Error Log.txt";
+    string message = timestamperA() + " Windows error #" + to_string(num) + " inside " + func8 + "\r\n" + winmessage + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+    exit(EXIT_FAILURE);
+}
+void warn(wstring func)
+{
+    string func8 = utf16to8(func);
+    string name = db_root8 + "\\SCDA Error Log.txt";
+    string message = timestamperA() + " Generic warning: " + func8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+void warn8(string func8)
+{
+    string name = db_root8 + "\\SCDA Error Log.txt";
+    string message = timestamperA() + " Generic warning: " + func8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+void qwarn(QString qfunc)
+{
+    string func8 = qfunc.toStdString();
+    string name = db_root8 + "\\SCDA Error Log.txt";
+    string message = timestamperA() + " Warning: " + func8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+void sqlwarn(wstring func, QSqlError qerror)
+{
+    string func8 = utf16to8(func);
+    string name = db_root8 + "\\SCDA Error Log.txt";
+    QString qmessage = qerror.text();
+    string message = timestamperA() + " SQL warning inside " + func8 + "\r\n" + qmessage.toStdString() + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+void winwarn(wstring func)
+{
+    DWORD num = GetLastError();
+    LPSTR buffer = new CHAR[512];
+    string mod = "wininet.dll";
+    LPCSTR modul = mod.c_str();
+    FormatMessageA((FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_FROM_HMODULE), GetModuleHandleA(modul), num, 0, buffer, 512, NULL);
+    string winmessage(buffer, 512);
+    delete[] buffer;
+    string func8 = utf16to8(func);
+    string name = db_root8 + "\\SCDA Error Log.txt";
+    string message = timestamperA() + " Windows warning #" + to_string(num) + " inside " + func8 + "\r\n" + winmessage + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+
+void log(wstring note)
+{
+    string note8 = utf16to8(note);
+    string name = db_root8 + "\\SCDA Process Log.txt";
+    string message = timestamperA() + "  " + note8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log"); }
+    if (!begun_logging)
+    {
+        if (!DeleteFileA(name.c_str())) { warn(L"DeleteFile-log"); }
+        if (!CloseHandle(hprinter)) { warn(L"CloseHandle-log"); }
+        hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log(after deletion)"); }
+        begun_logging = 1;
+    }
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+void log8(string note8)
+{
+    string name = db_root8 + "\\SCDA Process Log.txt";
+    string message = timestamperA() + "  " + note8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log"); }
+    if (!begun_logging)
+    {
+        if (!DeleteFileA(name.c_str())) { warn(L"DeleteFile-log"); }
+        if (!CloseHandle(hprinter)) { warn(L"CloseHandle-log"); }
+        hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log(after deletion)"); }
+        begun_logging = 1;
+    }
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+void qlog(QString qnote)
+{
+    string note8 = qnote.toStdString();
+    string name = db_root8 + "\\SCDA Process Log.txt";
+    string message = timestamperA() + "  " + note8 + "\r\n";
+    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log"); }
+    if (!begun_logging)
+    {
+        if (!DeleteFileA(name.c_str())) { warn(L"DeleteFile-log"); }
+        if (!CloseHandle(hprinter)) { warn(L"CloseHandle-log"); }
+        hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hprinter == INVALID_HANDLE_VALUE) { warn(L"CreateFile-log(after deletion)"); }
+        begun_logging = 1;
+    }
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)message.size();
+    WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
+}
+
+int clean(wstring& out, int mode)
+{
+    int count = 0;
+    size_t pos1, pos2;
+    pos1 = out.find(L'[', 0);
+    if (pos1 < out.size())
+    {
+        pos2 = out.find(L']', pos1);
+        out.erase(pos1, pos2 - pos1 + 1);
+    }
+    /*
+    pos1 = out.find(L'(', 0);
+    if (pos1 < out.size())
+    {
+        pos2 = out.find(L')', pos1);
+        out.erase(pos1, pos2 - pos1 + 1);
+    }
+    */
+    if (mode == 1)
+    {
+        pos1 = out.find(L'\'', 0);
+        while (pos1 < out.size())
+        {
+            out.replace(pos1, 1, L"''");
+            pos1 = out.find(L'\'', pos1 + 2);
+        }
+    }
+
+    /*
+    pos1 = out.find(L'-', 0);
+    while (pos1 < out.size())
+    {
+        out.replace(pos1, 1, L"\-");
+        pos1 = out.find(L'-', pos1 + 1);
+    }
+    pos1 = out.find(L',', 0);
+    while (pos1 < out.size())
+    {
+        out.replace(pos1, 1, L"_");
+        pos1 = out.find(L',', pos1 + 1);
+    }
+    pos1 = out.find(L'<', 0);
+    while (pos1 < out.size())
+    {
+        out.replace(pos1, 1, L"less_than_");
+        pos1 = out.find(L'<', pos1 + 10);
+    }
+    pos1 = out.find(L'>', 0);
+    while (pos1 < out.size())
+    {
+        out.replace(pos1, 1, L"greater_than_");
+        pos1 = out.find(L'<', pos1 + 13);
+    }
+    pos1 = out.find(L'/', 0);
+    while (pos1 < out.size())
+    {
+        out.replace(pos1, 1, L"_or_");
+        pos1 = out.find(L'/', pos1 + 4);
+    }
+    pos1 = out.find(L'+', 0);
+    while (pos1 < out.size())
+    {
+        out.replace(pos1, 1, L"_and_");
+        pos1 = out.find(L'+', pos1 + 5);
+    }
+    */
+    while (1)
+    {
+        if (out.front() == L' ') { out.erase(0, 1); count++; }
+        else { break; }
+    }
+    while (1)
+    {
+        if (out.back() == L' ') { out.pop_back(); }
+        else { break; }
+    }
+    /*
+    pos1 = out.find(L' ', 0);
+    while (pos1 < out.size())
+    {
+        out.replace(pos1, 1, L"_");
+        pos1 = out.find(L' ', pos1 + 1);
+    }
+    */
+    return count;
+}
+int qclean(QString& bbq, int mode)
+{
+    int count = 0;
+    int pos1, pos2;
+    pos1 = bbq.indexOf('[');
+    if (pos1 > 0)
+    {
+        pos2 = bbq.indexOf(']', pos1);
+        bbq.remove(pos1, pos2 - pos1 + 1);
+    }
+    if (mode == 1)
+    {
+        pos1 = bbq.indexOf('\'');
+        while (pos1 > 0)
+        {
+            bbq.replace(pos1, 1, "''");
+            pos1 = bbq.indexOf('\'', pos1 + 2);
+        }
+    }
+    while (1)
+    {
+        if (bbq.front() == ' ') { bbq.remove(0, 1); count++; }
+        else { break; }
+    }
+    while (1)
+    {
+        if (bbq.back() == ' ') { bbq.remove(bbq.size() - 1, 1); }
+        else { break; }
+    }
+    return count;
+}
+
+// Given a full path name, delete the file/folder.
+void delete_file(string filename)
+{
+    HANDLE hfile = CreateFileA(filename.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr_bt("CreateFile-delete_file"); }
+    if (!DeleteFileA(filename.c_str())) { winerr_bt("DeleteFile-delete_file"); }
+    if (!CloseHandle(hfile)) { winerr_bt("CloseHandle-delete_file"); }
+}
+void delete_folder(string folder_name)
+{
+    wstring folder_wname = utf8to16(folder_name);
+    wstring folder_search = folder_wname + L"\\*";
+    WIN32_FIND_DATAW info;
+    HANDLE hfile1 = FindFirstFileW(folder_search.c_str(), &info);
+    wstring file_name;
+    do
+    {
+        file_name = folder_wname + L"\\" + info.cFileName;
+        if (file_name.back() != L'.') { delete_file(file_name); }
+    } while (FindNextFileW(hfile1, &info));
+
+    BOOL yesno = RemoveDirectoryW(folder_wname.c_str());
+    if (!yesno) { winerr_bt("RemoveDirectory-delete_folder"); }
+}
+
+
+wstring bin_memory(HANDLE& hfile)
+{
+    DWORD size = GetFileSize(hfile, NULL);
+    DWORD bytes_read;
+    LPWSTR buffer = new WCHAR[size / 2];
+    if (!ReadFile(hfile, buffer, size, &bytes_read, NULL)) { winerr_bt("ReadFile-bin_memory"); }
+    wstring bin(buffer, size / 2);
+    delete[] buffer;
+    return bin;
+}
+QString q_memory(wstring& full_path)
+{
+    HANDLE hfile = CreateFileW(full_path.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr_bt("CreateFile-q_memory"); }
+    DWORD size = GetFileSize(hfile, NULL);
+    DWORD bytes_read;
+    LPWSTR buffer = new WCHAR[size / 2];
+    if (!ReadFile(hfile, buffer, size, &bytes_read, NULL)) { winerr_bt("ReadFile-q_memory"); }
+    QString qfile = QString::fromWCharArray(buffer, size / 2);
+    delete[] buffer;
+    return qfile;
+}
+wstring w_memory(wstring& full_path)
+{
+    HANDLE hfile = CreateFileW(full_path.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr_bt("CreateFile-w_memory"); }
+    DWORD size = GetFileSize(hfile, NULL);
+    DWORD bytes_read;
+    LPWSTR buffer = new WCHAR[size / 2];
+    if (!ReadFile(hfile, buffer, size, &bytes_read, NULL)) { winerr_bt("ReadFile-w_memory"); }
+    wstring wfile(buffer, size / 2);
+    delete[] buffer;
+    return wfile;
+}
+
+	
