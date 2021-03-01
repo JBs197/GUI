@@ -11,3 +11,10 @@ Additionally, a multithreaded progress bar was added to the GUI. It will receive
 
 [2021/02/22]
 Restructured key functions so that large operations will iterate along the hierarchal pattern "catalogue->CSV->primary table->subtables". Done this way, the app can resume an interrupted or cancelled operation without having to restart. Also, more general functionality has been added, for both the GUI and SQL. More widgets are displaying information visually, and the thread wait time to access the database (in use) has been decreased. 
+
+[2021/03/01]
+Centralized all database writing operations to a single thread, after discovering occasional SQL errors when multiple threads carried out their own insertions. SQLite states that it can accomodate multiple write requests using internal mutexes, but even after enabling "Write-Ahead Logging", some errors persisted. 
+
+More benchmarking was done, comparing the std/Windows C++ functions with the Qt functions. After centralizing the database write-access, stress tests were performed using different versions of key functions. Qt could insert one SQL statement every 4.5ms (the average taken from a long workload), while the raw SQLite functions could only insert one statement every 20ms. This holds true while inserting one statement at a time, but if using transactions, raw SQLite dashes ahead to one statement every 0.1ms. Qt has some transaction capability, but it is currently limited to the scope of one table at a time. Compared to SQLite inserting hundreds of thousands of statements per transaction, Qt cannot compete.
+
+Given the slower performance of Qt, as well as its occasionally-stifling high-level API, the project will be migrating to std C++/Windows for most functions. The GUI will continue to mature in Qt, as it is simple and effective. 
