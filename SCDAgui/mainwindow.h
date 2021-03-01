@@ -4,6 +4,8 @@
 #include <QMainWindow>
 #include <QTreeWidgetItem>
 #include <QtSql>
+#include <sqlite3.h>
+#include <iostream>
 #include "catalogue.h"
 
 QT_BEGIN_NAMESPACE
@@ -52,9 +54,11 @@ private:
     int threads_working = 0;
     int remote_controller = 0;  // 0 = standard, 1 = cancel.
     bool begun_logging = 0;
+    sqlite3_stmt* statement;
     std::wstring wdrive;
     vector<mutex> m_jobs;
     QString qdrive;
+    mutex m_error;
     QMutex m_db, m_err, m_bar, m_namegen, m_id, m_io;
     vector<string> sroots = { "F:", "D:" };
     vector<wstring> wroots = { L"F:", L"D:" }; //  NOTE: REMOVE HARDCODING LATER.
@@ -74,7 +78,7 @@ private:
     void reset_bar(int, QString);
     void initialize();
     QString sqlerr_enum(QSqlError::ErrorType);
-    void sqlerr(QString&, QSqlError);
+    void sqlerror(string, sqlite3*&);
     //void nobles_st(CATALOGUE&);
     //void subtables_mt(CATALOGUE&);
     //void subtables_mapped(CATALOGUE&);
@@ -93,11 +97,18 @@ private:
     void all_cata_db(QVector<QVector<QString>>&, QMap<QString, int>&);
     void scan_incomplete_cata(CATALOGUE&);
     void judicator(int&, int&, QString, QString);
+    void judicator_noqt(int&, int&, QString, QString);
     //void insert_catalogue_st(int&, int&, QString, QString);
     void insert_csvs(QVector<QString>&, int&, int&, wstring, vector<int>);
     void insert_primary_row_db(QVector<QString>&, int, CATALOGUE&, QString&, QVector<QVector<QString>>&, QVector<QVector<QString>>&);
-    void create_insert_csv_table_db(QVector<QString>&, int, CATALOGUE&, QString&, QVector<QVector<QString>>&);
-    void create_insert_csv_subtables_db(QVector<QString>&, int, CATALOGUE&, QString&, QVector<QVector<QString>>&);
+    int create_insert_csv_table_db(QVector<QString>&, int, CATALOGUE&, QString&, QVector<QVector<QString>>&);
+    int create_insert_csv_subtables_db(QVector<QString>&, int, CATALOGUE&, QString&, QVector<QVector<QString>>&);
+    int insert_damaged_row(QVector<QString>&, int, QString, QString&, int);
+    static int sql_callback(void*, int, char**, char**);
+    vector<vector<string>> step(sqlite3*&);
+    vector<vector<string>> step2(sqlite3*&, sqlite3_stmt*&, qint64&, qint64&);
+    void bind(string&, vector<string>&);
+
 
     // TEMPLATES
 
@@ -140,8 +151,8 @@ private:
     }
 
     // (THREADSAFE) Make an entry into the error log. If the error is severe, terminate the application.
-    template<typename S> void err(S&) {}
-    template<> void err<string>(string& message)
+    template<typename S> void err(S) {}
+    template<> void err<string>(string message)
     {
         string spath = sroots[location] + "\\SCDA Error Log.txt";
         string smessage = timestamperA() + " Generic Error: " + message + "\r\n\r\n";
@@ -157,7 +168,7 @@ private:
         }
         exit(EXIT_FAILURE);
     }
-    template<> void err<wstring>(wstring& message)
+    template<> void err<wstring>(wstring message)
     {
         string spath = sroots[location] + "\\SCDA Error Log.txt";
         string smessage = timestamperA() + " Generic Error: " + utf16to8(message) + "\r\n\r\n";
@@ -173,7 +184,7 @@ private:
         }
         exit(EXIT_FAILURE);
     }
-    template<> void err<QString>(QString& message)
+    template<> void err<QString>(QString message)
     {
         string spath = sroots[location] + "\\SCDA Error Log.txt";
         string smessage = timestamperA() + " Generic Error: " + message.toStdString() + "\r\n\r\n";
@@ -189,8 +200,8 @@ private:
         }
         exit(EXIT_FAILURE);
     }
-    template<typename S> void winerr(S&) {}
-    template<> void winerr<string>(string& message)
+    template<typename S> void winerr(S) {}
+    template<> void winerr<string>(string message)
     {
         DWORD num = GetLastError();
         string spath = sroots[location] + "\\SCDA Error Log.txt";
@@ -207,7 +218,7 @@ private:
         }
         exit(EXIT_FAILURE);
     }
-    template<> void winerr<wstring>(wstring& message)
+    template<> void winerr<wstring>(wstring message)
     {
         DWORD num = GetLastError();
         string spath = sroots[location] + "\\SCDA Error Log.txt";
@@ -224,7 +235,7 @@ private:
         }
         exit(EXIT_FAILURE);
     }
-    template<> void winerr<QString>(QString& message)
+    template<> void winerr<QString>(QString message)
     {
         DWORD num = GetLastError();
         string spath = sroots[location] + "\\SCDA Error Log.txt";
@@ -241,8 +252,8 @@ private:
         }
         exit(EXIT_FAILURE);
     }
-    template<typename S> void warn(S&) {}
-    template<> void warn<string>(string& message)
+    template<typename S> void warn(S) {}
+    template<> void warn<string>(string message)
     {
         string name = sroots[location] + "\\SCDA Error Log.txt";
         string smessage = timestamperA() + " Generic Warning: " + message + "\r\n\r\n";
@@ -257,7 +268,7 @@ private:
             CloseHandle(hprinter);
         }
     }
-    template<> void warn<wstring>(wstring& message)
+    template<> void warn<wstring>(wstring message)
     {
         string name = sroots[location] + "\\SCDA Error Log.txt";
         string smessage = timestamperA() + " Generic Warning: " + utf16to8(message) + "\r\n\r\n";
@@ -272,7 +283,7 @@ private:
             CloseHandle(hprinter);
         }
     }
-    template<> void warn<QString>(QString& message)
+    template<> void warn<QString>(QString message)
     {
         string name = sroots[location] + "\\SCDA Error Log.txt";
         string smessage = timestamperA() + " Generic Warning: " + message.toStdString() + "\r\n\r\n";
@@ -287,8 +298,8 @@ private:
             CloseHandle(hprinter);
         }
     }
-    template<typename S> void winwarn(S&) {}
-    template<> void winwarn<string>(string& message)
+    template<typename S> void winwarn(S) {}
+    template<> void winwarn<string>(string message)
     {
         DWORD num = GetLastError();
         string spath = sroots[location] + "\\SCDA Error Log.txt";
@@ -304,7 +315,7 @@ private:
             CloseHandle(hprinter);
         }
     }
-    template<> void winwarn<wstring>(wstring& message)
+    template<> void winwarn<wstring>(wstring message)
     {
         DWORD num = GetLastError();
         string spath = sroots[location] + "\\SCDA Error Log.txt";
@@ -320,7 +331,7 @@ private:
             CloseHandle(hprinter);
         }
     }
-    template<> void winwarn<QString>(QString& message)
+    template<> void winwarn<QString>(QString message)
     {
         DWORD num = GetLastError();
         string spath = sroots[location] + "\\SCDA Error Log.txt";
@@ -344,7 +355,7 @@ private:
     {
         lock_guard lock(m_io);
         string name = sroots[location] + "\\SCDA Process Log.txt";
-        string message = timestamperA() + "  " + note + "\r\n\r\n";
+        string message = timestamperA() + "  " + note + "\r\n";
         HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
         if (hprinter == INVALID_HANDLE_VALUE) { winerr(L"CreateFile-slog"); }
         if (!begun_logging)

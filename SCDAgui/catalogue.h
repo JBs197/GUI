@@ -22,6 +22,7 @@ class CATALOGUE
     wstring csv_trunk;
     vector<wstring> csv_branches;
     QVector<QString> gid_list;
+    //QVector<QString> damaged_gid_list;
     QVector<QString> column_titles;
     QVector<QString> row_titles;
     QVector<QString> primary_table_column_titles;
@@ -70,7 +71,7 @@ public:
     bool get_multicol();
     void set_multicol(bool);
     void set_qfile(int);
-    QVector<QVector<QString>> extract_data_rows(QString&);
+    QVector<QVector<QString>> extract_data_rows(QString&, int&);
     QVector<QString> get_column_titles();
     void set_column_titles(QVector<QString>);
     QVector<QString> get_row_titles();
@@ -92,6 +93,8 @@ public:
     void add_statements(QVector<QString>&, int);  // NOTE: Mutexing happens within MainWindow, not Catalogue.
     QVector<QVector<QString>> take_statements(int);  // Form [statement][template, values...]. NOTE: Mutexing in MW.
     void set_wpath(wstring&);
+    //void set_damaged_gid(QString&);
+    //QVector<QString> get_damaged_gid_list();
 };
 
 #endif // CATALOGUE_H

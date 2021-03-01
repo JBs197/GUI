@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-using std::vector;
+using namespace std;
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -45,6 +45,7 @@ void MainWindow::initialize()
     vector<mutex> dummy(cores);
     m_jobs.swap(dummy);
 
+    reset_bar(100, " ");
     clear_log();
     logger("MainWindow initialized.");
 }
@@ -82,33 +83,77 @@ void MainWindow::all_cata_db(QVector<QVector<QString>>& ntree, QMap<QString, int
 }
 
 // Threadsafe error log function specific to SQL errors.
-
-void MainWindow::sqlerr(QString qfunc, QSqlError qerror)
+void MainWindow::sqlerror(string func, sqlite3*& dbnoqt)
 {
-    QString code = qerror.nativeErrorCode();
-    qDebug() << "Native error code: " << code;
-    string func8 = qfunc.toStdString();
-    string name = utf16to8(wroots[location]) + "\\SCDA Error Log.txt";
-    QString qmessage = qerror.text();
-    QString qcode = qerror.nativeErrorCode();
-    QSqlError::ErrorType et = qerror.type();
-    QString qtype = sqlerr_enum(et);
-    string message = timestamperA() + " SQL ERROR: type " + qtype.toStdString() + ", #" + qcode.toStdString() + ", inside " + func8 + "\r\n" + qmessage.toStdString() + "\r\n";
-    m_err.lock();
-    HANDLE hprinter = CreateFileA(name.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hprinter == INVALID_HANDLE_VALUE) { qDebug() << "CreateFileA error, in sqlerr, from " << qfunc << ". " << qerror.text(); }
+    int errcode = sqlite3_errcode(dbnoqt);
+    const char* errmsg = sqlite3_errmsg(dbnoqt);
+    string serrmsg(errmsg);
+    string path = sroots[location] + "\\SCDAnoqt Error Log.txt";
+    string message = timestamperA() + " SQL ERROR #" + to_string(errcode) + ", in ";
+    message += func + "\r\n" + serrmsg + "\r\n\r\n";
+    lock_guard<mutex> lock(m_error);
+    HANDLE hprinter = CreateFileA(path.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE)
+    {
+        std::cout << "sqlerror CreateFileA failure" << endl;
+        system("pause");
+    }
     SetFilePointer(hprinter, NULL, NULL, FILE_END);
     DWORD bytes;
     DWORD fsize = (DWORD)message.size();
     if (WriteFile(hprinter, message.c_str(), fsize, &bytes, NULL))
     {
-        if (!CloseHandle(hprinter)) { qDebug() << "CloseHandle error, in sqlerr, from " << qfunc << ". " << qerror.text(); }
+        std::cout << "sqlerror WriteFile failure" << endl;
+        system("pause");
     }
-    else
+    CloseHandle(hprinter);
+    exit(EXIT_FAILURE);
+}
+QString MainWindow::sqlerr_enum(QSqlError::ErrorType type)
+{
+    QString qtype;
+    switch (type)
     {
-        qDebug() << "WriteFile error, in sqlerr, from " << qfunc << ". " << qerror.text();
+    case 0:
+        qtype = "NoError";
+        break;
+
+    case 1:
+        qtype = "ConnectionError";
+        break;
+
+    case 2:
+        qtype = "StatementError";
+        break;
+
+    case 3:
+        qtype = "TransactionError";
+        break;
+
+    case 4:
+        qtype = "UnknownError";
+        break;
     }
-    m_err.unlock();
+    return qtype;
+}
+void MainWindow::sqlerr(QString qmessage, QSqlError qerror)
+{
+    QString qcode = qerror.nativeErrorCode();
+    string spath = sroots[location] + "\\SCDA Error Log.txt";
+    QString qerrmess = qerror.text();
+    QSqlError::ErrorType et = qerror.type();
+    QString qtype = sqlerr_enum(et);
+    string smessage = timestamperA() + " SQL ERROR: type " + qtype.toStdString() + ", #" + qcode.toStdString() + ", inside " + qmessage.toStdString() + "\r\n" + qerrmess.toStdString() + "\r\n\r\n";
+    lock_guard lock(m_io);
+    HANDLE hprinter = CreateFileA(spath.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SetFilePointer(hprinter, NULL, NULL, FILE_END);
+    DWORD bytes;
+    DWORD fsize = (DWORD)smessage.size();
+    WriteFile(hprinter, smessage.c_str(), fsize, &bytes, NULL);
+    if (hprinter)
+    {
+        CloseHandle(hprinter);
+    }
     exit(EXIT_FAILURE);
 }
 
@@ -143,9 +188,16 @@ void MainWindow::clear_log()
 // Progress bar related functions.
 void MainWindow::update_bar()
 {
+    int jump, old;
     if (jobs_max >= 0 && jobs_done >= 0)
     {
         jobs_percent = 100 * jobs_done / jobs_max;
+        old = ui->progressBar->value();
+        jump = jobs_percent - old;
+        if (jump >= 15)
+        {
+            warn(L"Progress bar single increase exceeded 15%");
+        }
         ui->progressBar->setValue(jobs_percent);
     }
     else
@@ -410,67 +462,389 @@ void MainWindow::update_cata_tree()
     logger("Updated the cata_tree");
 }
 
-QString MainWindow::sqlerr_enum(QSqlError::ErrorType type)
-{
-    QString qtype;
-    switch (type)
-    {
-    case 0:
-        qtype = "NoError";
-        break;
-
-    case 1:
-        qtype = "ConnectionError";
-        break;
-
-    case 2:
-        qtype = "StatementError";
-        break;
-
-    case 3:
-        qtype = "TransactionError";
-        break;
-
-    case 4:
-        qtype = "UnknownError";
-        break;
-    }
-    return qtype;
-}
-void MainWindow::sqlerr(QString& qmessage, QSqlError qerror)
-{
-    QString qcode = qerror.nativeErrorCode();
-    string spath = sroots[location] + "\\SCDA Error Log.txt";
-    QString qerrmess = qerror.text();
-    QSqlError::ErrorType et = qerror.type();
-    QString qtype = sqlerr_enum(et);
-    string smessage = timestamperA() + " SQL ERROR: type " + qtype.toStdString() + ", #" + qcode.toStdString() + ", inside " + qmessage.toStdString() + "\r\n" + qerrmess.toStdString() + "\r\n\r\n";
-    lock_guard lock(m_io);
-    HANDLE hprinter = CreateFileA(spath.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    SetFilePointer(hprinter, NULL, NULL, FILE_END);
-    DWORD bytes;
-    DWORD fsize = (DWORD)smessage.size();
-    WriteFile(hprinter, smessage.c_str(), fsize, &bytes, NULL);
-    if (hprinter)
-    {
-        CloseHandle(hprinter);
-    }
-    exit(EXIT_FAILURE);
-}
-
-
 // DEBUG FUNCTIONS:
-void MainWindow::judicator(int& control, int& report, QString qyear, QString qname)
+void MainWindow::bind(string& stmt, vector<string>& param)
 {
-    //report++;
+    string temp;
+    size_t pos1 = 0;
+    size_t count = 0;
+    while (pos1 < stmt.size())
+    {
+        pos1 = stmt.find('?', pos1 + 1);
+        if (pos1 < stmt.size())
+        {
+            count++;
+        }
+    }
+    if (count != param.size())
+    {
+        err(L"parameter count mismatch-bind");
+    }
+
+    pos1 = 0;
+    for (int ii = 0; ii < (int)count; ii++)
+    {
+        pos1 = stmt.find('?', pos1 + 1);
+        temp = "'" + param[ii] + "'";
+        stmt.replace(pos1, 1, temp);
+    }
+}
+vector<vector<string>> MainWindow::step(sqlite3*& dbnoqt)
+{
+    int type, col_count, size;  // Type: 1(int), 2(double), 3(string)
+    int error = sqlite3_step(statement);
+    int ivalue;
+    double dvalue;
+    string svalue;
+    vector<vector<string>> results;
+
+    while (error == 100)
+    {
+        col_count = sqlite3_column_count(statement);
+        results.push_back(vector<string>(col_count));
+        for (int ii = 0; ii < col_count; ii++)
+        {
+            type = sqlite3_column_type(statement, ii);
+            switch (type)
+            {
+            case 1:
+                ivalue = sqlite3_column_int(statement, ii);
+                results[results.size() - 1][ii] = to_string(ivalue);
+                break;
+            case 2:
+                dvalue = sqlite3_column_double(statement, ii);
+                results[results.size() - 1][ii] = to_string(dvalue);
+                break;
+            case 3:
+                size = sqlite3_column_bytes(statement, ii);
+                char* buffer = (char*)sqlite3_column_text(statement, ii);
+                svalue.assign(buffer, size);
+                results[results.size() - 1][ii] = svalue;
+                break;
+            }
+        }
+        error = sqlite3_step(statement);
+    }
+    if (error > 0 && error != 101)
+    {
+        sqlerror("step: " + to_string(error), dbnoqt);
+    }
+    return results;
+}
+vector<vector<string>> MainWindow::step2(sqlite3*& dbnoqt, sqlite3_stmt*& statement2, qint64& timer2, qint64& timer3)
+{
+    int type, col_count, size;  // Type: 1(int), 2(double), 3(string)
+    QElapsedTimer t2, t3;
+    t2.start();
+    int error = sqlite3_step(statement2);
+    timer2 = t2.restart();
+    int ivalue;
+    double dvalue;
+    string svalue;
+    vector<vector<string>> results;
+    t3.start();
+    while (error == 100)
+    {
+        col_count = sqlite3_column_count(statement2);
+        results.push_back(vector<string>(col_count));
+        for (int ii = 0; ii < col_count; ii++)
+        {
+            type = sqlite3_column_type(statement2, ii);
+            switch (type)
+            {
+            case 1:
+                ivalue = sqlite3_column_int(statement2, ii);
+                results[results.size() - 1][ii] = to_string(ivalue);
+                break;
+            case 2:
+                dvalue = sqlite3_column_double(statement2, ii);
+                results[results.size() - 1][ii] = to_string(dvalue);
+                break;
+            case 3:
+                size = sqlite3_column_bytes(statement2, ii);
+                char* buffer = (char*)sqlite3_column_text(statement2, ii);
+                svalue.assign(buffer, size);
+                results[results.size() - 1][ii] = svalue;
+                break;
+            }
+        }
+        error = sqlite3_step(statement2);
+    }
+    if (error > 0 && error != 101)
+    {
+        sqlerror("step: " + to_string(error), dbnoqt);
+    }
+    timer3 = t3.restart();
+    return results;
+}
+int MainWindow::sql_callback(void* NotUsed, int argc, char** argv, char** column_name)
+{
+    for (int ii = 0; ii < argc; ii++)
+    {
+        qDebug() << "Column name: " << column_name[ii];
+        qDebug() << "argv: " << argv[ii];
+    }
+    return 0;
+}
+void MainWindow::judicator_noqt(int& control, int& report, QString qyear, QString qname)
+{
+    string syear = qyear.toStdString();
+    string sname = qname.toStdString();
+    string stemp;
     QString temp = qroots[location] + "\\" + qyear + "\\" + qname;
     wstring cata_wpath = temp.toStdWString();
     int num_gid = get_file_path_number(cata_wpath, L".csv");
     int workload = num_gid / cores;
     int bot = 0;
     int top = workload - 1;
-    //bool cancelled = 0;
     reset_bar(num_gid, "Adding spreadsheets to catalogue " + qname);
+    QElapsedTimer timer, timer_exec;
+    char* errormsg = 0;
+    vector<string> param(3);
+
+    string filepath = "F:\\dbnoqt.db";
+    QString qfp = QString::fromStdString(filepath);
+    reset_db(qfp);
+    // Establish the thread's connection to the database.
+    m_db.lock();
+    sqlite3* dbnoqt;
+    int error = sqlite3_open_v2(filepath.c_str(), &dbnoqt, (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE), NULL);
+    if (error) { sqlerror("open-judicator_noqt", dbnoqt); }
+
+    // Create the catalogue index meta-table.
+    string stmt = "CREATE TABLE IF NOT EXISTS TCatalogueIndex (Year TEXT, ";
+    stmt += "Name TEXT, Description TEXT);";
+    //error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), &MainWindow::sql_callback, NULL, &errormsg);
+    error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement, NULL);
+    if (error) { sqlerror("prepare1-judicator_noqt", dbnoqt); }
+    step(dbnoqt);
+
+    // Insert this catalogue into the catalogue index.
+    stmt = "INSERT INTO TCatalogueIndex ( Year, Name, Description ) VALUES (?, ?, ?);";
+    param[0] = syear;
+    param[1] = "[" + sname + "]";
+    param[2].assign("Incomplete");
+    bind(stmt, param);
+    error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement, NULL);
+    if (error) 
+    { 
+        sqlerror("prepare2-judicator_noqt", dbnoqt); 
+    }
+    step(dbnoqt);
+
+    // Create a table for this catalogue's damaged CSVs.
+    stemp = "[" + sname + "$Damaged]";
+    stmt = "CREATE TABLE IF NOT EXISTS " + stemp + " (GID NUMERIC, [Number of Missing Data Entries] NUMERIC);";
+    error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement, NULL);
+    if (error) { sqlerror("prepare3-judicator_noqt", dbnoqt); }
+    step(dbnoqt);
+
+    // Launch the worker threads, which will iterate through the CSVs.
+    vector<std::thread> peons;
+    vector<int> controls;
+    controls.assign(cores, 0);
+    vector<int> reports;
+    reports.assign(cores, 0);
+    vector<int> prompt(3);  // Form [id, bot, top]
+    QVector<QVector<QString>> all_queue(cores, QVector<QString>());  // Form [thread][statements]
+    for (int ii = 0; ii < cores; ii++)
+    {
+        prompt[0] = ii;
+        prompt[1] = bot;
+        prompt[2] = top;
+        std::thread thr(&MainWindow::insert_csvs, this, std::ref(all_queue[ii]), std::ref(controls[ii]), std::ref(reports[ii]), cata_wpath, prompt);
+        peons.push_back(std::move(thr));
+        bot += workload;
+        if (ii < cores - 1) { top += workload; }
+        else { top = num_gid - 1; }
+    }
+
+    // Create the catalogue's primary table.
+    while (all_queue[0].size() < 2) { Sleep(50); }
+    string cata_desc = all_queue[0][1].toStdString();  // Used later.
+    m_jobs[0].lock();
+    temp = all_queue[0][0];
+    all_queue[0].erase(all_queue[0].begin(), all_queue[0].begin() + 2);
+    m_jobs[0].unlock();
+    stmt = temp.toStdString();
+    error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement, NULL);
+    if (error) { sqlerror("prepare4-judicator_noqt", dbnoqt); }
+    step(dbnoqt);
+
+    // Loop through the worker threads, inserting their statements into the database.
+    int active_thread = 0;
+    int inert_threads = 0;
+    int pile, progress, num1, num2, num3;
+    QVector<QString> desk;
+    QVector<qint64> exec1(100);
+    QVector<qint64> exec2(100);
+    QVector<qint64> exec3(100);
+    qint64 time2, time3;
+    sqlite3_stmt* statement2;
+    timer.start();
+    timer_exec.start();
+    while (control == 0 && jobs_done < jobs_max)
+    {
+        progress = 0;
+        for (int ii = 0; ii < cores; ii++)
+        {
+            progress += reports[ii];
+        }
+        report = progress;
+        qDebug() << "Updated progress bar: " << timer.restart();
+        pile = all_queue[active_thread].size();
+        if (pile > 0)
+        {
+            m_jobs[active_thread].lock();
+            desk = all_queue[active_thread];
+            all_queue[active_thread].clear();
+            m_jobs[active_thread].unlock();
+
+            for (int ii = 0; ii < desk.size(); ii++)
+            {
+                stmt = desk[ii].toStdString();
+                error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement2, NULL);
+                if (error) 
+                { 
+                    sqlerror("prepare5-judicator_noqt", dbnoqt); 
+                }
+                timer_exec.restart();
+                sqlite3_step(statement2);
+                //step2(dbnoqt, statement2, time2, time3);
+                exec1[ii % 100] = timer_exec.restart();
+                exec2[ii % 100] = time2;
+                exec3[ii % 100] = time3;
+                if (ii % 100 == 99)
+                {
+                    num1 = 0;
+                    num2 = 0;
+                    num3 = 0;
+                    for (int jj = 0; jj < 100; jj++)
+                    {
+                        num1 += (int)exec1[jj];
+                        num2 += (int)exec2[jj];
+                        num3 += (int)exec3[jj];
+                    }
+                    num1 = num1 / 100;
+                    num2 = num2 / 100;
+                    num3 = num3 / 100;
+                    stemp = "Local core step time: " + to_string(num1) + "\r\n";
+                    log(stemp);
+                    stemp = "Core step time: " + to_string(num2) + "\r\n";
+                    log(stemp);
+                    stemp = "Message processing time: " + to_string(num3) + "\r\n";
+                    log(stemp);
+                }
+                if (ii % 1000 == 999)
+                {
+                    stemp = "Executed 1000 SQL stmts: " + to_string(timer.restart()) + "\r\n";
+                    log(stemp);
+                }
+            }
+        }
+        active_thread++;
+        if (active_thread >= cores) { active_thread = 0; }
+    }
+    if (control == 1)  // Before shutting down, finish inserting the CSVs that were in queue.
+    {
+        for (size_t ii = 0; ii < controls.size(); ii++)
+        {
+            controls[ii] = 1;
+        }
+        active_thread = 0;
+        while (inert_threads < cores)  // Keep working while the threads finish their final tasks.
+        {
+            inert_threads = 0;
+            for (int ii = 0; ii < cores; ii++)  // Count how many worker threads have stopped.
+            {
+                if (controls[ii] < 0)
+                {
+                    inert_threads++;
+                }
+            }
+            pile = all_queue[active_thread].size();
+            if (pile > 0)
+            {
+                m_jobs[active_thread].lock();
+                desk = all_queue[active_thread];
+                all_queue[active_thread].clear();
+                m_jobs[active_thread].unlock();
+
+                for (int ii = 0; ii < desk.size(); ii++)
+                {
+                    stmt = desk[ii].toStdString();
+                    error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement, NULL);
+                    if (error) { err(L"prepare6-judicator_noqt"); }
+                    step(dbnoqt);
+                }
+            }
+            active_thread++;
+            if (active_thread >= cores) { active_thread = 0; }
+        }
+        for (int ii = 0; ii < cores; ii++)  // When all worker threads are done, do one final sweep of the queue.
+        {
+            pile = all_queue[ii].size();
+            if (pile > 0)
+            {
+                m_jobs[ii].lock();
+                desk = all_queue[ii];
+                all_queue[ii].clear();
+                m_jobs[ii].unlock();
+
+                for (int jj = 0; jj < desk.size(); jj++)
+                {
+                    stmt = desk[jj].toStdString();
+                    error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement, NULL);
+                    if (error) { err(L"prepare7-judicator_noqt"); }
+                    step(dbnoqt);
+                }
+            }
+        }
+        progress = 0;
+        for (int ii = 0; ii < cores; ii++)  // Do one final update of the progress bar.
+        {
+            progress += reports[ii];
+        }
+        report = progress;
+    }
+    for (auto& th : peons)
+    {
+        if (th.joinable())
+        {
+            th.join();
+        }
+    }
+    if (control == 0)  // If we are done without being cancelled, we can mark the catalogue as 'complete'.
+    {
+        stemp = "[" + sname + "]";
+        stmt = "UPDATE TCatalogueIndex SET Description = ? WHERE Name = ?;";
+        param.resize(2);
+        param[0] = cata_desc;
+        param[1] = stemp;
+        bind(stmt, param);
+        error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement, NULL);
+        if (error) { sqlerror("prepare8-judicator_noqt", dbnoqt); }
+        step(dbnoqt);
+
+        logger("Catalogue " + qname + " completed its CSV insertion.");
+    }
+    else
+    {
+        logger("Catalogue " + qname + " had its CSV insertion cancelled.");
+    }
+    threads_working = 0;
+
+}
+void MainWindow::judicator(int& control, int& report, QString qyear, QString qname)
+{
+    QString temp = qroots[location] + "\\" + qyear + "\\" + qname;
+    wstring cata_wpath = temp.toStdWString();
+    int num_gid = get_file_path_number(cata_wpath, L".csv");
+    int workload = num_gid / cores;
+    int bot = 0;
+    int top = workload - 1;
+    reset_bar(num_gid, "Adding spreadsheets to catalogue " + qname);
+    QElapsedTimer timer, timer_prepare, timer_exec;
 
     // Establish the thread's connection to the database.
     m_db.lock();
@@ -488,6 +862,13 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
     q.addBindValue("Incomplete");
     fine = q.exec();
     if (!fine) { sqlerr("exec1-judicator", q.lastError()); }
+
+    // Create a table for this catalogue's damaged CSVs.
+    temp = "[" + qname + "$Damaged]";
+    fine = q.prepare("CREATE TABLE IF NOT EXISTS " + temp + " (GID NUMERIC, [Number of Missing Data Entries] NUMERIC)");
+    if (!fine) { sqlerr("prepare1.1-judicator", q.lastError()); }
+    fine = q.exec();
+    if (!fine) { sqlerr("exec1.1-judicator", q.lastError()); }
 
     // Launch the worker threads, which will iterate through the CSVs.
     vector<std::thread> peons;
@@ -526,8 +907,13 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
     // Loop through the worker threads, inserting their statements into the database.
     int active_thread = 0;
     int inert_threads = 0;
-    int pile, progress;
+    int pile, progress, num1, num2;
     QVector<QString> desk;
+    QVector<qint64> prep(100);
+    QVector<qint64> exec(100);
+    timer.start();
+    timer_prepare.start();
+    timer_exec.start();
     while (control == 0 && jobs_done < jobs_max)
     {
         progress = 0;
@@ -536,6 +922,7 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
             progress += reports[ii];
         }
         report = progress;
+        qDebug() << "Updated progress bar: " << timer.restart();
         pile = all_thr_stmts[active_thread].size();
         if (pile > 0)
         {
@@ -543,18 +930,45 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
             desk = all_thr_stmts[active_thread];
             all_thr_stmts[active_thread].clear();
             m_jobs[active_thread].unlock();
-
+            qDebug() << "Piled jobs onto desk: " << timer.restart();
             for (int ii = 0; ii < desk.size(); ii++)
             {
+                timer_prepare.restart();
                 fine = q.prepare(desk[ii]);
                 if (!fine)
                 {
-                    QString bbq = "F:\\desk_debug.txt";
-                    printer(bbq, desk[ii]);
                     sqlerr("prepare3-judicator", q.lastError());
                 }
+                prep[ii%100] = timer_prepare.restart();
+                if (ii % 100 == 99)
+                {
+                    num1 = 0;
+                    for (int jj = 0; jj < 100; jj++)
+                    {
+                        num1 += (int)prep[jj];
+                    }
+                    num2 = num1 / 100;
+                    qDebug() << "Average judicator prep time: " << num2;
+                }
+
+                timer_exec.restart();
                 fine = q.exec();
                 if (!fine) { sqlerr("exec3-judicator", q.lastError()); }
+                exec[ii%100] = timer_exec.restart();
+                if (ii % 100 == 99)
+                {
+                    num1 = 0;
+                    for (int jj = 0; jj < 100; jj++)
+                    {
+                        num1 += (int)exec[jj];
+                    }
+                    num2 = num1 / 100;
+                    qDebug() << "Average judicator exec time: " << num2;
+                }
+                if (ii % 1000 == 999)
+                {
+                    qDebug() << "Executed 1000 SQL stmts: " << timer.restart();
+                }
             }
         }
         active_thread++;
@@ -567,10 +981,10 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
             controls[ii] = 1;
         }
         active_thread = 0;
-        while (inert_threads < cores)
+        while (inert_threads < cores)  // Keep working while the threads finish their final tasks.
         {
             inert_threads = 0;
-            for (int ii = 0; ii < cores; ii++)
+            for (int ii = 0; ii < cores; ii++)  // Count how many worker threads have stopped.
             {
                 if (controls[ii] < 0)
                 {
@@ -591,12 +1005,36 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
                     if (!fine) { sqlerr("prepare3-judicator", q.lastError()); }
                     fine = q.exec();
                     if (!fine) { sqlerr("exec3-judicator", q.lastError()); }
-                    report++;
                 }
             }
             active_thread++;
             if (active_thread >= cores) { active_thread = 0; }
         }
+        for (int ii = 0; ii < cores; ii++)  // When all worker threads are done, do one final sweep of the queue.
+        {
+            pile = all_thr_stmts[ii].size();
+            if (pile > 0)
+            {
+                m_jobs[ii].lock();
+                desk = all_thr_stmts[ii];
+                all_thr_stmts[ii].clear();
+                m_jobs[ii].unlock();
+
+                for (int jj = 0; jj < desk.size(); jj++)
+                {
+                    fine = q.prepare(desk[jj]);
+                    if (!fine) { sqlerr("prepare3-judicator", q.lastError()); }
+                    fine = q.exec();
+                    if (!fine) { sqlerr("exec3-judicator", q.lastError()); }
+                }
+            }
+        }
+        progress = 0;
+        for (int ii = 0; ii < cores; ii++)  // Do one final update of the progress bar.
+        {
+            progress += reports[ii];
+        }
+        report = progress;
     }
     for (auto& th : peons)
     {
@@ -620,48 +1058,7 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
     {
         logger("Catalogue " + qname + " had its CSV insertion cancelled.");
     }
-
-    /*
-    vector<std::thread> peons;
-    cata.initialize_threading(cores);
-    for (int ii = 0; ii < cores; ii++)
-    {
-        cata.jobs[ii] = -1 * (ii + 1);  // Naming threads. Should be immediately resolved by the new thread.
-        cata.bot_top[ii][0] = bot;
-        if (ii < cores - 1)
-        {
-            cata.bot_top[ii][1] = top;
-        }
-        else
-        {
-            cata.bot_top[ii][1] = num_gid - 1;
-        }
-        std::thread thr(&MainWindow::insert_csvs, std::ref(cata));
-        peons.push_back(std::move(thr));
-        bot += workload;
-        top += workload;
-    }
-    judicator(cata, report);  // Processing of worker output.
-    for (auto& th : peons)
-    {
-        if (th.joinable())
-        {
-            th.join();
-        }
-    }
-    */
-    /*
-    if (!cancelled)
-    {
-        finish_cata_index(cata);  // Mark this entry as complete in the meta-table, if it was finished.
-        logger("Inserted all data for catalogue " + cata.get_qname());
-    }
-    else
-    {
-        logger("Insertion of catalogue " + cata.get_qname() + " was cancelled before it could finish.");
-    }
-    */
-    //int bbq = 1;
+    threads_working = 0;
 }
 void MainWindow::insert_csvs(QVector<QString>& thr_stmts, int& control, int& report, wstring cata_wpath, vector<int> prompt)
 {
@@ -669,6 +1066,8 @@ void MainWindow::insert_csvs(QVector<QString>& thr_stmts, int& control, int& rep
     QVector<QVector<QString>> text_vars, data_rows;
     QString gid, qfile, stmt, temp;
     wstring csv_path;
+    int damaged_csv;
+    int insertions = 1;
 
     // Prepare the catalogue helper object.
     CATALOGUE cata;
@@ -692,18 +1091,25 @@ void MainWindow::insert_csvs(QVector<QString>& thr_stmts, int& control, int& rep
         switch (control)
         {
         case 0:  // Standard work.
+            damaged_csv = 0;
             gid = cata.get_gid(ii);
             csv_path = cata.get_csv_path(ii);
             qfile = q_memory(csv_path);
             text_vars = cata.extract_text_vars(qfile);
-            data_rows = cata.extract_data_rows(qfile);
+            data_rows = cata.extract_data_rows(qfile, damaged_csv);
 
-            insert_primary_row_db(thr_stmts, my_id, cata, gid, text_vars, data_rows);
-            create_insert_csv_table_db(thr_stmts, my_id, cata, gid, data_rows);
-            create_insert_csv_subtables_db(thr_stmts, my_id, cata, gid, data_rows);
+            if (damaged_csv == 0)  // Undamaged CSV - to be inserted.
+            {
+                insert_primary_row_db(thr_stmts, my_id, cata, gid, text_vars, data_rows);  // 1
+                insertions += create_insert_csv_table_db(thr_stmts, my_id, cata, gid, data_rows);
+                insertions += create_insert_csv_subtables_db(thr_stmts, my_id, cata, gid, data_rows);
+            }
+            else  // Damaged CSV - will not be inserted, but will be added to the catalogue's list of damaged CSVs.
+            {
+                insertions += insert_damaged_row(thr_stmts, my_id, cata.get_qname(), gid, damaged_csv);
+            }
 
             report++;
-
             break;
 
         case 1:  // Cancel.
@@ -712,7 +1118,7 @@ void MainWindow::insert_csvs(QVector<QString>& thr_stmts, int& control, int& rep
         }
     }
 
-
+    qDebug() << "Worker thread reporting insertions: " << insertions;
 }
 void MainWindow::insert_primary_row_db(QVector<QString>& thr_stmts, int my_id, CATALOGUE& cata, QString& gid, QVector<QVector<QString>>& text_vars, QVector<QVector<QString>>& data_rows)
 {
@@ -723,7 +1129,7 @@ void MainWindow::insert_primary_row_db(QVector<QString>& thr_stmts, int my_id, C
     stmt.replace(pos1, 1, gid);
     for (int ii = 0; ii < text_vars.size(); ii++)
     {
-        temp = "[" + text_vars[ii][1] + "]";
+        temp = "'" + text_vars[ii][1] + "'";
         pos1 = stmt.indexOf('?', pos1);
         stmt.replace(pos1, 1, temp);
     }
@@ -739,17 +1145,20 @@ void MainWindow::insert_primary_row_db(QVector<QString>& thr_stmts, int my_id, C
     thr_stmts.append(stmt);
     m_jobs[my_id].unlock();
 }
-void MainWindow::create_insert_csv_table_db(QVector<QString>& thr_stmts, int my_id, CATALOGUE& cata, QString& gid, QVector<QVector<QString>>& data_rows)
+int MainWindow::create_insert_csv_table_db(QVector<QString>& thr_stmts, int my_id, CATALOGUE& cata, QString& gid, QVector<QVector<QString>>& data_rows)
 {
+    int count = 0;
+
     // Create this CSV's full table, starting from the template.
     QString stmt = cata.get_csv_template();
     QString qname = cata.get_qname();
     int pos1 = stmt.indexOf("!!!");
+    QString temp;
     QString tname = "[" + qname + "$" + gid + "]";
     stmt.replace(pos1, 3, tname);
     m_jobs[my_id].lock();
     thr_stmts.append(stmt);
-    m_jobs[my_id].unlock();
+    count++;   m_jobs[my_id].unlock();
 
     // Append the full table's data rows, one by one, starting from the template each time.
     QString stmt0 = cata.get_insert_csv_row_template();
@@ -760,23 +1169,29 @@ void MainWindow::create_insert_csv_table_db(QVector<QString>& thr_stmts, int my_
     {
         stmt = stmt0;
         pos1 = pos0;
-        for (int jj = 0; jj < data_rows[ii].size(); jj++)
+        qclean(data_rows[ii][0], 1);
+        temp = "'" + data_rows[ii][0] + "'";               // For all rows, the first entry is the description,
+        pos1 = stmt.indexOf('?', pos1);                    // which requires single quotation marks.
+        stmt.replace(pos1, 1, temp);
+        for (int jj = 1; jj < data_rows[ii].size(); jj++)
         {
-            pos1 = stmt.indexOf('?', pos1);
+            pos1 = stmt.indexOf('?', pos1);                // All entries after the first one are numeric.
             stmt.replace(pos1, 1, data_rows[ii][jj]);
         }
         m_jobs[my_id].lock();
         thr_stmts.append(stmt);
-        m_jobs[my_id].unlock();
+        count++;   m_jobs[my_id].unlock();
     }
+    return count;
 }
-void MainWindow::create_insert_csv_subtables_db(QVector<QString>& thr_stmts, int my_id, CATALOGUE& cata, QString& gid, QVector<QVector<QString>>& data_rows)
+int MainWindow::create_insert_csv_subtables_db(QVector<QString>& thr_stmts, int my_id, CATALOGUE& cata, QString& gid, QVector<QVector<QString>>& data_rows)
 {
+    int count = 0;
     QString qname = cata.get_qname();
     QVector<QVector<QVector<int>>> tree = cata.get_tree();
     QString create_subtable_template = cata.get_create_sub_template();
     QString ins_csv_row_template = cata.get_insert_csv_row_template();
-    QString stmt, stmt0, tname;
+    QString stmt, stmt0, tname, temp;
     int pos0, pos1, num_rows, row_index;
 
     // Iterate by subtable.
@@ -791,7 +1206,7 @@ void MainWindow::create_insert_csv_subtables_db(QVector<QString>& thr_stmts, int
         stmt.replace(pos1, 3, tname);
         m_jobs[my_id].lock();
         thr_stmts.append(stmt);
-        m_jobs[my_id].unlock();
+        count++;   m_jobs[my_id].unlock();
 
         // Insert the subtable's rows.
         stmt0 = ins_csv_row_template;
@@ -810,18 +1225,35 @@ void MainWindow::create_insert_csv_subtables_db(QVector<QString>& thr_stmts, int
             {
                 row_index = tree[ii][1][jj - 1];
             }
-            for (int kk = 0; kk < data_rows[0].size(); kk++)
+            qclean(data_rows[row_index][0], 1);
+            temp = "'" + data_rows[row_index][0] + "'";        // For all rows, the first entry is the description,
+            pos1 = stmt.indexOf('?', pos1);                    // which requires single quotation marks.
+            stmt.replace(pos1, 1, temp);
+            for (int kk = 1; kk < data_rows[jj].size(); kk++)
             {
                 pos1 = stmt.indexOf('?', pos1);
-                stmt.replace(pos1, 1, data_rows[row_index][kk]);
+                stmt.replace(pos1, 1, data_rows[row_index][kk]);  // All entries after the first one are numeric.
             }
             m_jobs[my_id].lock();
             thr_stmts.append(stmt);
-            m_jobs[my_id].unlock();
+            count++;   m_jobs[my_id].unlock();
         }
     }
+    return count;
 }
+int MainWindow::insert_damaged_row(QVector<QString>& thr_stmts, int my_id, QString qname, QString& gid, int damaged_csv)
+{
+    int count = 0;
+    QString temp = "[" + qname + "$Damaged]";
+    QString stmt = "INSERT INTO " + temp + " (GID, [Number of Missing Data Entries]) VALUES (";
+    temp = QString::number(damaged_csv);
+    stmt += gid + ", " + temp + ");";
+    m_jobs[my_id].lock();
+    thr_stmts.append(stmt);
+    count++;   m_jobs[my_id].unlock();
 
+    return count;
+}
 
 // TASK FUNCTIONS, USED BY ONE OR MORE GUI BUTTONS:
 
@@ -909,6 +1341,7 @@ void MainWindow::insert_cata_csvs_mt(CATALOGUE& cata)
     {
         QString gid, qfile, connection_name;
         wstring csv_path;
+        int damaged_csv = 0;
         QVector<QVector<QString>> text_vars, data_rows;
         int my_report = 0;
         int my_status = 0;
@@ -929,7 +1362,7 @@ void MainWindow::insert_cata_csvs_mt(CATALOGUE& cata)
                 csv_path = cata.get_csv_path(ii);
                 qfile = q_memory(csv_path);
                 text_vars = cata.extract_text_vars(qfile);
-                data_rows = cata.extract_data_rows(qfile);
+                data_rows = cata.extract_data_rows(qfile, damaged_csv);
 
                 insert_primary_row(q, cata, gid, text_vars, data_rows);
                 create_insert_csv_table(q, cata, gid, data_rows);
@@ -1184,14 +1617,35 @@ void MainWindow::on_pB_insert_clicked()
     QVector<QVector<QString>> catas_in_db;  // Form [year][year, catalogues...]
     QMap<QString, int> map_cata;
     QString qyear, qname, qdesc, stmt;
+    int control, report;
     int year_index, cata_index;
-    QSqlQuery q(db);
     bool fine;
 
     ui->pB_cancel->setEnabled(1);
     all_cata_db(catas_in_db, map_cata);  // Populate the tree and map.
     for (int ii = 0; ii < catas_to_do.size(); ii++)  // For each catalogue selected...
     {
+        control = 0;  // 0 = Standard, 1 = Cancel.
+        report = 0;
+        qyear = catas_to_do[ii]->text(0);
+        qname = catas_to_do[ii]->text(1);
+        log(L"Begin insertion of catalogue " + qname.toStdWString());
+        threads_working = 1;
+        std::thread judi(&MainWindow::judicator, this, std::ref(control), std::ref(report), qyear, qname);
+        while (threads_working)
+        {
+            std::this_thread::sleep_for (std::chrono::milliseconds(50));
+            QCoreApplication::processEvents();
+            jobs_done = report;
+            update_bar();
+            if (remote_controller)
+            {
+                control = 1;
+            }
+        }
+        judi.join();
+
+        /*
         CATALOGUE cata;
         qyear = catas_to_do[ii]->text(0);
         qname = catas_to_do[ii]->text(1);
@@ -1224,21 +1678,50 @@ void MainWindow::on_pB_insert_clicked()
                 qDebug() << "Catalogue " << qname << " is already included in the database.";
             }
         }
-    }
+        */
+    }    
     update_cata_tree();
     build_ui_tree(cata_tree, 2);
+
 }
 
 // (Debug function) Display some information.
 void MainWindow::on_pB_test_clicked()
 {
-    QString temp, temp2;
-    string path1 = "F:\\stmt from CSV row.txt";
-    load(path1, temp);
-    qDebug() << temp;
-    wstring path2 = L"F:\\2001yescsv.txt";
-    load(path2, temp2);
-    qDebug() << temp2;
+    QList<QTreeWidgetItem *> catas_to_do = ui->TW_cataondrive->selectedItems();
+    QVector<QVector<QString>> catas_in_db;  // Form [year][year, catalogues...]
+    QMap<QString, int> map_cata;
+    QString qyear, qname, qdesc, stmt;
+    int control, report;
+    int year_index, cata_index;
+    bool fine;
+
+    ui->pB_cancel->setEnabled(1);
+    all_cata_db(catas_in_db, map_cata);  // Populate the tree and map.
+    for (int ii = 0; ii < catas_to_do.size(); ii++)  // For each catalogue selected...
+    {
+        control = 0;  // 0 = Standard, 1 = Cancel.
+        report = 0;
+        qyear = catas_to_do[ii]->text(0);
+        qname = catas_to_do[ii]->text(1);
+        log(L"Begin insertion of catalogue " + qname.toStdWString());
+        threads_working = 1;
+        std::thread judi(&MainWindow::judicator_noqt, this, std::ref(control), std::ref(report), qyear, qname);
+        while (threads_working)
+        {
+            std::this_thread::sleep_for (std::chrono::milliseconds(50));
+            QCoreApplication::processEvents();
+            jobs_done = report;
+            update_bar();
+            if (remote_controller)
+            {
+                control = 1;
+            }
+        }
+        judi.join();
+    }
+    update_cata_tree();
+    build_ui_tree(cata_tree, 2);
 }
 
 // (Debug function) Perform a series of actions to test new functions.
@@ -1250,6 +1733,9 @@ void MainWindow::on_pB_benchmark_clicked()
     reset_db(db_path);
     QString qyear = "3067";
     QString qname = "97-570-X1981005";
+
+
+
     int report = 0;
     int control = 0;  // 0 = Standard, 1 = Stop.
     threads_working = 1;
@@ -1282,7 +1768,7 @@ void MainWindow::on_pB_viewdata_clicked()
     // Populate the 'Geographic Region' tab.
     QString stmt = "SELECT Geography FROM " + tname;
     bool fine = q.prepare(stmt);
-    if (!fine) { sqlerr("prepare-on_pB_viewdata", q.lastError()); }
+    //if (!fine) { sqlerr("prepare-on_pB_viewdata", q.lastError()); }
     executor(q);
     //if (!fine) { sqlerr("exec-on_pB_viewdata", q.lastError()); }
     while (q.next())
@@ -1297,7 +1783,7 @@ void MainWindow::on_pB_viewdata_clicked()
     q.clear();
     stmt = "SELECT * FROM " + tname;
     fine = q.prepare(stmt);
-    if (!fine) { sqlerr("prepare2-on_pB_viewdata", q.lastError()); }
+    //if (!fine) { sqlerr("prepare2-on_pB_viewdata", q.lastError()); }
     executor(q);
     //if (!fine) { sqlerr("exec2-on_pB_viewdata", q.lastError()); }
     QSqlRecord rec = q.record();

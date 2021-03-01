@@ -19,7 +19,8 @@ HEADERS += \
     basictools.h \
     catalogue.h \
     csv.h \
-    mainwindow.h
+    mainwindow.h \
+    sqlite3.h
 
 FORMS += \
     mainwindow.ui

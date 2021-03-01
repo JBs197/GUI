@@ -92,7 +92,6 @@ void CATALOGUE::initialize_table()
 
     if (!FindClose(hfile1)) { winerr_bt("FindClose-cata.initialize_table"); }
 }
-
 void CATALOGUE::initialize_threading(int num)
 {
     jobs.resize(num);
@@ -284,6 +283,18 @@ QVector<QVector<QString>> CATALOGUE::take_statements(int myid)
     return stmts;
 }
 
+// Update or retrieve this catalogue's list of CSVs containing 'missing data' placeholders.
+/*
+void CATALOGUE::set_damaged_gid(QString& gid)
+{
+    damaged_gid_list.append(gid);
+}
+QVector<QString> CATALOGUE::get_damaged_gid_list()
+{
+    return damaged_gid_list;
+}
+*/
+
 // Template fabrication functions.
 void CATALOGUE::insert_primary_columns_template()
 {
@@ -302,7 +313,7 @@ void CATALOGUE::insert_primary_columns_template()
         primary_template += "?, ";
     }
     primary_template.remove(primary_template.size() - 2, 2);
-    primary_template += ")";
+    primary_template += ");";
     primary_table_column_template = primary_template;
 }
 void CATALOGUE::create_csv_tables_template()
@@ -326,7 +337,7 @@ void CATALOGUE::create_csv_tables_template()
         sql += "[Value] NUMERIC, ";
     }
     sql.remove(sql.size() - 2, 2);
-    sql.append(")");
+    sql.append(");");
     csv_tables_template = sql;
 }
 void CATALOGUE::insert_csv_row_template()
@@ -345,11 +356,11 @@ void CATALOGUE::insert_csv_row_template()
         sql += "?, ";
     }
     sql.remove(sql.size() - 2, 2);
-    sql.append(")");
+    sql.append(");");
     ins_csv_row_template = sql;
 }
 
-//
+// Return a complete (non-template) SQL statement to create this catalogue's primary table.
 QString CATALOGUE::create_primary_table()
 {
     QVector<QString> linearized_titles;
@@ -453,7 +464,7 @@ QString CATALOGUE::create_primary_table()
         stmt += "[" + linearized_titles[ii] + "] NUMERIC, ";
     }
     stmt.remove(stmt.size() - 2, 2);
-    stmt.append(")");
+    stmt.append(");");
     return stmt;
 }
 
@@ -487,7 +498,7 @@ QVector<QVector<QString>> CATALOGUE::extract_text_vars(QString& qfile)
 }
 
 // Returns a CSV's data rows.
-QVector<QVector<QString>> CATALOGUE::extract_data_rows(QString& qfile)
+QVector<QVector<QString>> CATALOGUE::extract_data_rows(QString& qfile, int& damaged)
 {
     QVector<QVector<QString>> rows;
     int pos1, pos2, pos3, nl1, nl2;
@@ -545,14 +556,18 @@ QVector<QVector<QString>> CATALOGUE::extract_data_rows(QString& qfile)
                         err_bt("pos error in extract_classic_rows");
                     }
                 }
-                temp1 = qfile.mid(pos1 + 1, pos3 - pos1 - 1);
-                rows[row_index].append(temp1);
+                temp1 = qfile.mid(pos1 + 1, pos3 - pos1 - 1);               
             }
             else
             {
                 temp1 = qfile.mid(pos1 + 1, pos2 - pos1 - 1);
-                rows[row_index].append(temp1);
             }
+
+            if (temp1 == "..")  // Stats Canada uses '..' as a placeholder for 'no data available here'.
+            {
+                damaged++;
+            }
+            rows[row_index].append(temp1);
         } while (pos2 < nl2);  // All strings after the first are values, in string form.
 
         nl1 = nl2;
