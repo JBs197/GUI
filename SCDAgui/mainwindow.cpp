@@ -676,11 +676,10 @@ void MainWindow::judicator_noqt(int& control, int& report, QString qyear, QStrin
     int inert_threads = 0;
     int pile, progress, num1, num2, num3;
     QVector<QString> desk;
-    QVector<qint64> exec1(100);
-    QVector<qint64> exec2(100);
-    QVector<qint64> exec3(100);
-    qint64 time2, time3;
-    sqlite3_stmt* statement2;
+    //QVector<qint64> exec1(100);
+    //QVector<qint64> exec2(100);
+    //QVector<qint64> exec3(100);
+    int time1;
     timer.start();
     timer_exec.start();
     while (control == 0 && jobs_done < jobs_max)
@@ -699,21 +698,22 @@ void MainWindow::judicator_noqt(int& control, int& report, QString qyear, QStrin
             desk = all_queue[active_thread];
             all_queue[active_thread].clear();
             m_jobs[active_thread].unlock();
-
+            timer_exec.restart();
+            error = sqlite3_exec(dbnoqt, "BEGIN EXCLUSIVE TRANSACTION", NULL, NULL, NULL);
+            if (error) { sqlerror("begin transaction-judicator_noqt", dbnoqt); }
             for (int ii = 0; ii < desk.size(); ii++)
             {
                 stmt = desk[ii].toStdString();
-                error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement2, NULL);
+                error = sqlite3_prepare_v2(dbnoqt, stmt.c_str(), -1, &statement, NULL);
                 if (error) 
                 { 
                     sqlerror("prepare5-judicator_noqt", dbnoqt); 
                 }
-                timer_exec.restart();
-                sqlite3_step(statement2);
-                //step2(dbnoqt, statement2, time2, time3);
-                exec1[ii % 100] = timer_exec.restart();
-                exec2[ii % 100] = time2;
-                exec3[ii % 100] = time3;
+                step(dbnoqt);
+                //exec1[ii % 100] = timer_exec.restart();
+                //exec2[ii % 100] = time2;
+                //exec3[ii % 100] = time3;
+                /*
                 if (ii % 100 == 99)
                 {
                     num1 = 0;
@@ -740,7 +740,12 @@ void MainWindow::judicator_noqt(int& control, int& report, QString qyear, QStrin
                     stemp = "Executed 1000 SQL stmts: " + to_string(timer.restart()) + "\r\n";
                     log(stemp);
                 }
+                */
             }
+            error = sqlite3_exec(dbnoqt, "COMMIT TRANSACTION", NULL, NULL, NULL);
+            if (error) { sqlerror("commit transaction-judicator_noqt", dbnoqt); }
+            time1 = (int)timer_exec.restart();
+            log("Completed " + to_string(desk.size()) + " statements in " + to_string(time1) + "ms \r\n");
         }
         active_thread++;
         if (active_thread >= cores) { active_thread = 0; }
@@ -909,8 +914,9 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
     int inert_threads = 0;
     int pile, progress, num1, num2;
     QVector<QString> desk;
-    QVector<qint64> prep(100);
-    QVector<qint64> exec(100);
+    //QVector<qint64> prep(100);
+    //QVector<qint64> exec(100);
+    qint64 time1;
     timer.start();
     timer_prepare.start();
     timer_exec.start();
@@ -930,27 +936,15 @@ void MainWindow::judicator(int& control, int& report, QString qyear, QString qna
             desk = all_thr_stmts[active_thread];
             all_thr_stmts[active_thread].clear();
             m_jobs[active_thread].unlock();
-            qDebug() << "Piled jobs onto desk: " << timer.restart();
+            //qDebug() << "Piled jobs onto desk: " << timer.restart();
+
             for (int ii = 0; ii < desk.size(); ii++)
             {
-                timer_prepare.restart();
                 fine = q.prepare(desk[ii]);
                 if (!fine)
                 {
                     sqlerr("prepare3-judicator", q.lastError());
                 }
-                prep[ii%100] = timer_prepare.restart();
-                if (ii % 100 == 99)
-                {
-                    num1 = 0;
-                    for (int jj = 0; jj < 100; jj++)
-                    {
-                        num1 += (int)prep[jj];
-                    }
-                    num2 = num1 / 100;
-                    qDebug() << "Average judicator prep time: " << num2;
-                }
-
                 timer_exec.restart();
                 fine = q.exec();
                 if (!fine) { sqlerr("exec3-judicator", q.lastError()); }
@@ -1706,7 +1700,8 @@ void MainWindow::on_pB_test_clicked()
         qname = catas_to_do[ii]->text(1);
         log(L"Begin insertion of catalogue " + qname.toStdWString());
         threads_working = 1;
-        std::thread judi(&MainWindow::judicator_noqt, this, std::ref(control), std::ref(report), qyear, qname);
+        std::thread judi(&MainWindow::judicator, this, std::ref(control), std::ref(report), qyear, qname);
+        //std::thread judi(&MainWindow::judicator_noqt, this, std::ref(control), std::ref(report), qyear, qname);
         while (threads_working)
         {
             std::this_thread::sleep_for (std::chrono::milliseconds(50));
