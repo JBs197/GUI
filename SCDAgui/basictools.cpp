@@ -7,16 +7,16 @@ bool begun_logging = 0;
 
 
 // Text encoder conversion functions.
-string utf16to8(wstring in)
+string utf16to8(wstring input)
 {
     auto& f = use_facet<codecvt<wchar_t, char, mbstate_t>>(locale());
     mbstate_t mb{};
-    string out(in.size() * f.max_length(), '\0');
+    string output(input.size() * f.max_length(), '\0');
     const wchar_t* past;
     char* future;
-    f.out(mb, &in[0], &in[in.size()], past, &out[0], &out[out.size()], future);
-    out.resize(future - &out[0]);
-    return out;
+    f.out(mb, &input[0], &input[input.size()], past, &output[0], &output[output.size()], future);
+    output.resize(future - &output[0]);
+    return output;
 }
 wstring utf8to16(string input)
 {
@@ -28,6 +28,17 @@ wstring utf8to16(string input)
     f.in(mb, &input[0], &input[input.size()], past, &output[0], &output[output.size()], future);
     output.resize(future - &output[0]);
     return output;
+}
+
+wstring utf8toUtf16(const string& utf8Str)
+{
+    wstring_convert<codecvt_utf8_utf16<wchar_t>> conv;
+    return conv.from_bytes(utf8Str);
+}
+string utf16toUtf8(const wstring& utf16Str)
+{
+    wstring_convert<codecvt_utf8_utf16<wchar_t>> conv;
+    return conv.to_bytes(utf16Str);
 }
 
 // Return a timestamp from the system clock.
@@ -61,6 +72,29 @@ void winerr_bt(string func)
     exit(EXIT_FAILURE);
 }
 
+// Flips the bool to true after a given number of seconds.
+void kitchen_timer(bool& light, double sec)
+{
+
+    auto ticktick = [=](bool& light)
+    {
+        time_t timer1, timer2;
+        double stopwatch;
+        time(&timer1);
+        do
+        {
+            Sleep(50);
+            time(&timer2);
+            stopwatch = difftime(timer1, timer2);
+        } while (stopwatch < sec);
+        light = 1;
+    };
+
+    std::thread thr(ticktick, ref(light));
+    thr.detach();
+}
+
+// Remove problematic chars from a string.
 int qclean(QString& bbq, int mode)
 {
     int count = 0;
@@ -92,6 +126,37 @@ int qclean(QString& bbq, int mode)
     }
     return count;
 }
+int sclean(string& bbq, int mode)
+{
+    int count = 0;
+    int pos1, pos2;
+    pos1 = bbq.find('[');
+    if (pos1 > 0)
+    {
+        pos2 = bbq.find(']', pos1);
+        bbq.erase(pos1, pos2 - pos1 + 1);
+    }
+    if (mode == 1)
+    {
+        pos1 = bbq.find('\'');
+        while (pos1 > 0)
+        {
+            bbq.replace(pos1, 1, "''");
+            pos1 = bbq.find('\'', pos1 + 2);
+        }
+    }
+    while (1)
+    {
+        if (bbq.front() == ' ') { bbq.erase(0, 1); count++; }
+        else { break; }
+    }
+    while (1)
+    {
+        if (bbq.back() == ' ') { bbq.erase(bbq.size() - 1, 1); }
+        else { break; }
+    }
+    return count;
+}
 
 // Determine the type of number contained within the given string. 0 = error, 1 = int, 2 = double.
 int qnum_test(QString num)
@@ -112,26 +177,7 @@ QVector<QString> string_vector_slicer(QVector<QString>& bushy, int bot, int top)
     return trim;
 }
 
-
-/*
-// Given an INSERT statement template QString and the position of a parameter char ('?') inside it,
-// replace the char with the given QString (wrapped in ''). The return value is the next such parameter char.
-int insert_val(QString& stmt, int pos, QString val)
-{
-    clean(val, 1);
-    stmt.replace(pos, 1, val);
-    int pos1 = stmt.indexOf('?', pos);
-    return pos1;
-}
-int insert_text(QString& stmt, int pos, QString text)
-{
-    QString temp = "[" + text + "]";
-    stmt.replace(pos, 1, temp);
-    int pos1 = stmt.indexOf('?', pos);
-    return pos1;
-}
-*/
-
+// Load a local file into memory.
 wstring bin_memory(HANDLE& hfile)
 {
     DWORD size = GetFileSize(hfile, NULL);
@@ -166,7 +212,23 @@ wstring w_memory(wstring& full_path)
     delete[] buffer;
     return wfile;
 }
-
+string s_memory(wstring& full_path)
+{
+    HANDLE hfile = CreateFileW(full_path.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, 0, NULL);
+    if (hfile == INVALID_HANDLE_VALUE) { winerr_bt("CreateFile-s_memory"); }
+    DWORD size = GetFileSize(hfile, NULL);
+    DWORD bytes_read;
+    LPWSTR buffer = new WCHAR[size / 2];
+    if (!ReadFile(hfile, buffer, size, &bytes_read, NULL)) { winerr_bt("ReadFile-s_memory"); }
+    wstring wfile(buffer, size / 2);
+    delete[] buffer;
+    string sfile = utf16toUtf8(wfile);
+    while ((int)sfile[0] < 0)
+    {
+        sfile.erase(0, 1);
+    }
+    return sfile;
+}
 
 // Contains pre-programmed responses to certain automated events during server-client communications.
 void CALLBACK call(HINTERNET hint, DWORD_PTR dw_context, DWORD dwInternetStatus, LPVOID status_info, DWORD status_info_length)
@@ -447,6 +509,7 @@ vector<wstring> get_subfolders(wstring root_folder)
 {
     vector<wstring> subfolders;
     wstring folder_name;
+    DWORD attributes;
     wstring folder_search = root_folder + L"\\*";
     size_t pos1;
     WIN32_FIND_DATAW info;
@@ -455,9 +518,8 @@ vector<wstring> get_subfolders(wstring root_folder)
     do
     {
         folder_name = root_folder + L"\\" + info.cFileName;
-        pos1 = folder_name.find(L'.', 0);
-        if (pos1 < folder_name.size()) { continue; }
-        else
+        attributes = GetFileAttributesW(folder_name.c_str());
+        if (attributes == 16)
         {
             subfolders.push_back(folder_name);
         }
@@ -578,17 +640,124 @@ QVector<QVector<QString>> extract_csv_data_rows(QString& qfile, QVector<QString>
     return rows;
 }
 
-template<> void delete_file<string>(string filename)
+// For a given ordered and prefixed list of strings, return its tree structure. Ints are the row indices of strings.
+// Tree form [possibility index][indices of ancestors, indices of children][indices]. 
+// Prefix is the char/string used to show indentation/hierarchy at the beginning of every string.
+vector<vector<vector<int>>> tree_maker(vector<string>& slist, string prefix)
 {
-    HANDLE hfile = CreateFileA(filename.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hfile == INVALID_HANDLE_VALUE) { winerr_bt("CreateFile-delete_sfile"); }
-    if (!DeleteFileA(filename.c_str())) { winerr_bt("DeleteFile-delete_sfile"); }
-    if (!CloseHandle(hfile)) { winerr_bt("CloseHandle-delete_sfile"); }
+    // Firstly, categorize each data row by its indentation, while keeping order.
+    vector<vector<int>> pidgeonhole;  // Form [indent_index][row index in list]
+    int indent_index;
+    size_t pos1;
+    for (int ii = 0; ii < slist.size(); ii++)
+    {
+        indent_index = 0;
+        pos1 = slist[ii].find(prefix);
+        while (pos1 < slist[ii].size())
+        {
+            indent_index++; 
+            pos1 = slist[ii].find(prefix, pos1 + prefix.size());
+        }
+        while (pidgeonhole.size() <= indent_index)  
+        {
+            pidgeonhole.push_back(vector<int>());
+        }
+        pidgeonhole[indent_index].push_back(ii);
+    }
+
+    // Secondly, create lists of all parents and their direct children.
+    vector<vector<vector<int>>> subtables; // Form [indent_index][family index][row indices in list]
+    subtables.resize(pidgeonhole.size() - 1);
+    vector<int> temp;
+    int bot, top, child;
+    int save_point = 0;
+    for (int ii = 0; ii < subtables.size(); ii++)
+    {
+        save_point = 0;
+        for (int jj = 0; jj < pidgeonhole[ii].size(); jj++)
+        {
+            if (jj == pidgeonhole[ii].size() - 1)  // Define min/max boundaries inside of which
+            {                                      // we will look for children.
+                top = slist.size() - 1;
+                bot = pidgeonhole[ii][jj];
+            }
+            else
+            {
+                top = pidgeonhole[ii][jj + 1];
+                bot = pidgeonhole[ii][jj];
+            }
+
+            temp.clear();
+            temp.push_back(bot);  // The first integer of the vector is the parent's row index.
+            for (int kk = save_point; kk < pidgeonhole[ii + 1].size(); kk++)
+            {
+                child = pidgeonhole[ii + 1][kk];
+                if (child > bot && child <= top)  // Every child's parent is the largest row index
+                {                                 // from the previous indentation's list, without
+                    temp.push_back(child);           // exceeding the child's row index.
+                }
+                else if (child > top)
+                {
+                    save_point = kk;  // This is the first child index that was too large.
+                    break;            // The next parental candidate can start here. Go go efficiency.
+                }
+            }
+            if (temp.size() > 1)  // A row is added to the list of parents if it has at least one child.
+            {
+                subtables[ii].push_back(temp);
+            }
+        }
+    }
+
+    // Thirdly, create lists of all possible family trees, from first to last generation.
+    vector<vector<vector<int>>> tree;
+    vector<int> genealogy;
+    int start_index = 0;
+    int indentation = 0;
+    for (int ii = 0; ii < subtables[0].size(); ii++)  // For every parentless parent, begin a new family line.
+    {
+        // Recursively determine if the given row is a parent. If so, add it to the tree and do the same for all
+        // its children. Returns first yet-to-be checked index in the current indentation's subtable list.
+        genealogy = { subtables[0][ii][0] };                                 
+        start_index = is_parent(tree, subtables, genealogy, indentation, start_index);  
+    }
+    return tree;
 }
-template<> void delete_file<wstring>(wstring filename)
+int is_parent(vector<vector<vector<int>>>& tree, vector<vector<vector<int>>>& subtables, vector<int> genealogy, int indentation, int start_index)
 {
-    HANDLE hfile = CreateFileW(filename.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hfile == INVALID_HANDLE_VALUE) { winerr_bt("CreateFile-delete_wfile"); }
-    if (!DeleteFileW(filename.c_str())) { winerr_bt("DeleteFile-delete_wfile"); }
-    if (!CloseHandle(hfile)) { winerr_bt("CloseHandle-delete_wfile"); }
+    int row = genealogy[genealogy.size() - 1];  // Current candidate for parenthood.
+    vector<int> new_genealogy;
+    int new_start_index = 0;
+    int num_children, current_pos;
+    for (int ii = start_index; ii < subtables[indentation].size(); ii++)  // For all parents at this indentation...
+    {
+        if (row == subtables[indentation][ii][0])  // ...if the candidate is a parent...
+        {
+            tree.push_back(vector<vector<int>>(2));  // ... give the candidate its own possibility branch in the tree.
+            current_pos = tree.size() - 1;
+            tree[current_pos][0] = genealogy;
+            tree[current_pos][1] = subtables[indentation][ii];
+            tree[current_pos][1].erase(tree[current_pos][1].begin());
+
+            if (indentation < subtables.size() - 1)  // ... and if not currently examining the final generation...
+            {
+                num_children = tree[current_pos][1].size();
+                for (int jj = 0; jj < num_children; jj++)  // ... then repeat the process with the candidate's children.
+                {
+                    new_genealogy = genealogy;
+                    new_genealogy.push_back(tree[current_pos][1][jj]);
+                    new_start_index = is_parent(tree, subtables, new_genealogy, indentation + 1, new_start_index);  
+                }
+            }
+
+            return ii + 1;
+        }
+        else if (row < subtables[indentation][ii][0])
+        {
+            return ii;
+        }
+    }
+    return subtables[indentation].size();
 }
+
+
