@@ -111,6 +111,34 @@ void CSV::tree_walker()
         start_index = is_parent(subtables, genealogy, indentation, start_index);  // the genealogy of every parent.
     }
 }
+void CSV::tree_printer()
+{
+    string filename = "F:\\CSV tree.txt";
+    string output = qname.toStdString() + "\r\n\r\n";
+    for (int ii = 0; ii < tree.size(); ii++)
+    {
+        output += "ii = " + to_string(ii) + "\r\n";
+        for (int jj = 0; jj < tree[ii].size(); jj++)
+        {
+            output += "jj = " + to_string(jj) + " ||| ";
+            for (int kk = 0; kk < tree[ii][jj].size(); kk++)
+            {
+                output += to_string(tree[ii][jj][kk]);
+                if (kk < tree[ii][jj].size() - 1)
+                {
+                    output += ", ";
+                }
+            }
+            output += "\r\n";
+        }
+    }
+
+    HANDLE hprinter = CreateFileA(filename.c_str(), (GENERIC_READ | GENERIC_WRITE), (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), NULL, CREATE_ALWAYS, 0, NULL);
+    if (hprinter == INVALID_HANDLE_VALUE) { err_bt("CreateFile-tree_printer"); }
+    DWORD bytes_written;
+    DWORD file_size = (DWORD)output.size();
+    if (!WriteFile(hprinter, output.c_str(), file_size, &bytes_written, NULL)) { err_bt("WriteFile-tree_printer"); }
+}
 
 // Return a subtable name, given GID and genealogy.
 QString CSV::sublabelmaker(QString& gid, QVector<QVector<int>>& family)
@@ -598,6 +626,4 @@ void CSV::insert_row_template(QString& work)
     work.append(" )");
 }
 
-template void delete_file<string>(string);
-template void delete_file<wstring>(wstring);
 
