@@ -14,6 +14,7 @@ public:
     void quick_scan(QString&, wstring&, wstring&);
     QVector<int> insert_value_all_statements(QVector<QString>&, QVector<QVector<QVector<int>>>&, QVector<QString>&, QVector<QVector<QString>>&);
     void tree_walker();
+    void tree_printer();
     void set_gid(QString&);
     bool get_multi_column();
     QVector<QString> get_column_titles();
@@ -54,3 +55,4 @@ private:
 };
 
 #endif // CSV_H
+
