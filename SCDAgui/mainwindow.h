@@ -3,10 +3,14 @@
 
 #include <QMainWindow>
 #include <QTreeWidgetItem>
+#include <QStandardItemModel>
+#include <QTableView>
 #include <QtSql>
 #include <sqlite3.h>
 #include <iostream>
+#include "Shlwapi.h"
 #include "catalogue.h"
+#pragma comment(lib, "Shlwapi.lib")
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -19,9 +23,6 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-    QSqlDatabase db;
-    void sqlerr(QString, QSqlError);
-    void logger(QString);
 
 signals:
 
@@ -30,23 +31,26 @@ public slots:
 private slots:
 
     void on_cB_drives_currentTextChanged(const QString &arg1);
-
     void on_pB_scan_clicked();
-
     void on_pB_insert_clicked();
-
     void on_pB_test_clicked();
-
     void on_pB_benchmark_clicked();
-
     void on_pB_viewdata_clicked();
-
     void on_pB_cancel_clicked();
+    void on_TW_cataindb_itemSelectionChanged();
+    void on_TW_cataondrive_itemSelectionChanged();
+    void on_GID_list_itemSelectionChanged();
+    void on_pB_region_clicked();
+    void on_pB_removecata_clicked();
 
 private:
     Ui::MainWindow *ui;
-    int location = 0;  // 0 = home, 1 = inn.
+    sqlite3* db;
+    sqlite3_stmt* statement;
+    int location = 1;  // 0 = home, 1 = inn.
     int cores = 3;
+    double pb_update = 1.0;  // Number of seconds between progress bar updates.
+    int handful = 100;  // Number of CSVs to insert between progress bar updates.
     int bar_threads;
     int jobs_max;
     int jobs_done;
@@ -54,60 +58,57 @@ private:
     int threads_working = 0;
     int remote_controller = 0;  // 0 = standard, 1 = cancel.
     bool begun_logging = 0;
-    sqlite3_stmt* statement;
-    std::wstring wdrive;
+    wstring wdrive;
+    string sdrive;
     vector<mutex> m_jobs;
     QString qdrive;
-    mutex m_error;
-    QMutex m_db, m_err, m_bar, m_namegen, m_id, m_io;
+    mutex m_err, m_io, m_bar, m_geo, m_job;
     vector<string> sroots = { "F:", "D:" };
     vector<wstring> wroots = { L"F:", L"D:" }; //  NOTE: REMOVE HARDCODING LATER.
     QVector<QString> qroots = { "F:", "D:" };
-    QString db_path;
+    string db_path;
+    vector<string> alphabet = { "A:", "B:", "C:", "D:", "E:", "F:", "G:", "H:", "I:", "J:", "K:", "L:", "M:", "N:", "O:", "P:", "Q:", "R:", "S:", "T:", "U:", "V:", "W:", "X:", "Y:", "Z:" };
+    vector<string> provinces = { "CANADA", "AB", "BC", "MB", "NB", "NL", "NT", "NS", "NU", "ON", "PE", "QC", "SK", "YT" };
     QVector<QVector<QVector<QString>>> cata_tree;  // Form [year][catalogue][qyear, qname, qdescription].
     QMap<QString, int> map_tree_year;  // For a given qyear, return that cata_tree index.
     QMap<QString, int> map_tree_cata;  // For a given qname, return that cata_tree index.
+    vector<string> viewcata_data;  // Hold essential information for the catalogue being viewed. Form [syear, sname].
+    vector<string> viewcata_gid_list;
     void build_ui_tree(QVector<QVector<QVector<QString>>>&, int);
     void add_children(QTreeWidgetItem*, QVector<QVector<QString>>&);
-    void executor(QSqlQuery&);
-    QSqlError executor_select(QString&, QSqlQuery&);
-    void initialize_catalogue(CATALOGUE&, QString&, QString&);
     void clear_log();
-    void reset_db(QString&);
     void update_bar();
-    void reset_bar(int, QString);
+    void reset_bar(int, string);
     void initialize();
-    QString sqlerr_enum(QSqlError::ErrorType);
     void sqlerror(string, sqlite3*&);
-    //void nobles_st(CATALOGUE&);
-    //void subtables_mt(CATALOGUE&);
-    //void subtables_mapped(CATALOGUE&);
-    //void populate_cata_mt(int);
     void update_text_vars(QVector<QVector<QString>>&, QString&);
     void update_cata_tree();
     void create_cata_index_table();
-    void insert_cata_index(CATALOGUE&);
-    void finish_cata_index(CATALOGUE&);
-    void insert_cata_csvs_mt(CATALOGUE&);
-    void create_csv_tables(CATALOGUE&, QString);
-    void populate_csv_tables(CATALOGUE&, int);
-    void insert_primary_row(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&, QVector<QVector<QString>>&);
-    void create_insert_csv_table(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
-    void create_insert_csv_subtables(QSqlQuery&, CATALOGUE&, QString&, QVector<QVector<QString>>&);
-    void all_cata_db(QVector<QVector<QString>>&, QMap<QString, int>&);
-    void scan_incomplete_cata(CATALOGUE&);
-    void judicator(int&, int&, QString, QString);
-    void judicator_noqt(int&, int&, QString, QString);
-    //void insert_catalogue_st(int&, int&, QString, QString);
-    void insert_csvs(QVector<QString>&, int&, int&, wstring, vector<int>);
-    void insert_primary_row_db(QVector<QString>&, int, CATALOGUE&, QString&, QVector<QVector<QString>>&, QVector<QVector<QString>>&);
-    int create_insert_csv_table_db(QVector<QString>&, int, CATALOGUE&, QString&, QVector<QVector<QString>>&);
-    int create_insert_csv_subtables_db(QVector<QString>&, int, CATALOGUE&, QString&, QVector<QVector<QString>>&);
-    int insert_damaged_row(QVector<QString>&, int, QString, QString&, int);
+    void create_prov_index_table();
+    void all_cata_db(QVector<QVector<QVector<QString>>>&, QMap<QString, int>&);
+    vector<string> scan_incomplete_cata(string, string);
+    void judicator(sqlite3*&, vector<int>&, vector<string>);
+    void insert_csvs(vector<vector<string>>&, vector<int>&, wstring, vector<int>);
+    int insert_primary_row(vector<string>&, CATALOGUE&, string&, vector<vector<string>>&, vector<vector<string>>&);
+    int create_insert_csv_table(vector<string>&, CATALOGUE&, string&, vector<vector<string>>&);
+    int create_insert_csv_subtables(vector<string>&, CATALOGUE&, string&, vector<vector<string>>&);
+    void insert_damaged_row(vector<string>&, string, string&, int);
+    void create_insert_region_tables(vector<string>&, vector<int>&, vector<string>);
     static int sql_callback(void*, int, char**, char**);
-    vector<vector<string>> step(sqlite3*&);
-    vector<vector<string>> step2(sqlite3*&, sqlite3_stmt*&, qint64&, qint64&);
+    vector<vector<string>> step(sqlite3*&, sqlite3_stmt*);
+    vector<string> step_1(sqlite3*&, sqlite3_stmt*);
     void bind(string&, vector<string>&);
+    vector<string> extract_gids(string);
+    vector<string> missing_gids(sqlite3*&, int, string, string);
+    void display_catalogue(sqlite3*&, vector<string>&, vector<int>&, string, string);
+    void display_region(sqlite3*&, vector<int>&, string, int);
+    void view_region(sqlite3*&, vector<int>&, int);
+    vector<string> all_tables();
+    void scan_drive(vector<int>&);
+    bool table_exist(string&);
+    int load_geo(vector<vector<string>>&, string&, string&);
+    void delete_cata(sqlite3*&, vector<int>&, string);
+    void auto_expand(QTreeWidget*&, int);
 
 
     // TEMPLATES
@@ -666,3 +667,4 @@ private:
 };
 
 #endif // MAINWINDOW_H
+
